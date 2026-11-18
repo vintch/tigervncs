@@ -74,6 +74,7 @@ namespace rfb {
     // setShared sets the value of the shared flag which will be sent to the
     // server upon initialisation.
     void setShared(bool s) { shared = s; }
+    bool isAppleServer() const { return appleServer; }
 
     // setFramebuffer configures the PixelBuffer that the CConnection
     // should render all pixel data in to. Note that the CConnection
@@ -345,6 +346,7 @@ namespace rfb {
     bool deleteStreamsWhenDone;
     bool shared;
     stateEnum state_;
+    bool appleServer;
 
     std::string serverName;
 

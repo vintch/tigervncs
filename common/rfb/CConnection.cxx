@@ -47,6 +47,7 @@
 #include <rfb/Security.h>
 #include <rfb/SecurityClient.h>
 #include <rfb/CConnection.h>
+#include <rfb/ClientCompatibility.h>
 
 #define XK_MISCELLANY
 #define XK_XKB_KEYS
@@ -77,7 +78,7 @@ CConnection::CConnection()
     supportsAudio(false),
     is(nullptr), os(nullptr), reader_(nullptr), writer_(nullptr),
     shared(false),
-    state_(RFBSTATE_UNINITIALISED),
+    state_(RFBSTATE_UNINITIALISED), appleServer(false),
     pendingPFChange(false), preferredEncoding(encodingTight),
     compressLevel(-1), qualityLevel(-1),
     formatChange(false), encodingChange(false),
@@ -204,6 +205,8 @@ bool CConnection::processVersionMsg()
   }
 
   server.setVersion(majorVersion, minorVersion);
+  // Retain the Apple marker before normalizing the protocol to RFB 3.8.
+  appleServer = appleProtocolVersion(majorVersion, minorVersion);
 
   vlog.info(_("Server supports RFB protocol version %d.%d"),
             server.majorVersion, server.minorVersion);
@@ -1044,8 +1047,9 @@ int CConnection::getQualityLevel()
   return qualityLevel;
 }
 
-void CConnection::setPF(const PixelFormat& pf)
+void CConnection::setPF(const PixelFormat& requested)
 {
+  PixelFormat pf = compatiblePixelFormat(isAppleServer(), requested);
   if (server.beforeVersion(3, 8)) {
     // Xvnc from TightVNC 1.2.9 sends out FramebufferUpdates with
     // cursors "asynchronously". If this happens in the middle of a

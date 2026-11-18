@@ -1,0 +1,73 @@
+TigerVNCs portable preferences
+=============================
+
+The session menu (Ctrl+Alt+M with the default modifiers) contains the
+"Scale desktop to window" checkbox. This fits the complete remote desktop
+inside the client area, preserving aspect ratio. Empty margins are normal
+when the two aspect ratios differ. Scaling includes the local cursor and
+pointer coordinates, and takes precedence over remote desktop resizing.
+Unchecking restores the original 1:1 display and scrollbars.
+
+The same checkbox is available under Options / Display. Options / Compression
+controls the preferred encoding, automatic selection, color depth, compression
+level and JPEG quality. To use a manually selected encoding/quality, disable
+Auto select. The server must support the requested encoding.
+
+Preferences are read from tigervncs.json beside the actual executable, including
+when launched from a shortcut or a different working directory. A file is
+created on first launch. Clicking the menu checkbox or accepting Options saves
+the preferences immediately. Command-line overrides take precedence for the
+current process; they are saved if the user subsequently accepts Options or
+changes the menu checkbox. No fallback directory is used if saving fails.
+
+The file uses UTF-8 JSON, schemaVersion 1, with a viewer object and a connections
+array for saved computers. Unknown objects and fields are retained when
+preferences or connection entries are saved.
+Writes use a temporary file in the same directory and atomic replacement; an
+invalid or unsupported configuration is reported rather than overwritten.
+
+Connection manager
+------------------
+The small ? button opens About. Computers toggles the lower connection tree
+and quadruples the connection window height. Its expanded state is saved in
+manager.expanded. New computer and New folder open an inline editor; Edit
+changes the selected entry, including its parent folder. Nested folders are
+supported. A nonempty folder must be emptied before deleting it. Selecting a
+computer fills the server field; double-clicking uses the Connect action.
+Manually replacing the address does not reuse another computer's credentials.
+
+Folders are stored as {id,name,parentId}; computers use
+{id,name,address,username,folderId,password}. An empty parent/folder ID means
+the top level. IDs are stable random identifiers. Missing parents, duplicate
+IDs, cycles and hierarchies over 128 levels are rejected before writing.
+
+Save password stores AES-256-GCM ciphertext, with a fresh 96-bit random nonce
+and a 128-bit authentication tag. The computer entry ID authenticates the
+ciphertext so passwords cannot be swapped between entries. The random 256-bit
+key is wrapped by Windows DPAPI for the current user, and only its wrapped
+form is stored in credentialKey. Windows owns the account protection; the
+Windows account password is never read or stored by TigerVNCs. Moving the
+JSON alone to another Windows account/computer will not unlock passwords.
+
+When editing, a blank password preserves an existing saved password. Enter
+a replacement to change it, or uncheck Save password to remove it. Passwords
+are not decrypted merely to edit a name or folder. Failed key unlocks are
+reported; the program never silently regenerates a missing or damaged key.
+Connection history also stays in this JSON; legacy registry history is read
+only as an initial fallback.
+
+Only the client-side image is scaled. This does not reduce the remote desktop's
+resolution or by itself reduce network traffic.
+
+macOS Screen Sharing compatibility
+---------------------------------
+The Apple RFB 3.889 banner is retained before normalizing the protocol version.
+Apple compatibility sessions use ZRLE, Hextile or Raw. Unsupported preferred
+codecs fall back to ZRLE; the options window shows the actual received codec.
+JPEG quality does not affect lossless ZRLE/Hextile/Raw images. Compression level
+is a server hint, not a lossy image-quality control.
+
+Apple disconnects clients which request 8-bit pixel formats. Full color remains
+available, and reduced color uses 16-bit RGB565 on the wire. The new 16-bit
+choice is also available for other VNC servers. Existing saved 8-bit settings
+automatically use 16-bit for Apple only. Other servers keep their 8-bit modes.

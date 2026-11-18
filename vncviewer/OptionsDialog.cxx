@@ -43,6 +43,8 @@
 #include "OptionsDialog.h"
 #include "ShortcutHandler.h"
 #include "parameters.h"
+#include "PortableSettings.h"
+#include <FL/fl_ask.H>
 
 #include "fltk/layout.h"
 #include "fltk/util.h"
@@ -69,11 +71,13 @@
 #include <FL/Fl_Choice.H>
 
 std::map<OptionsCallback*, void*> OptionsDialog::callbacks;
+bool OptionsDialog::appleServer = false;
+int OptionsDialog::serverEncoding = -1;
 
 static std::set<OptionsDialog *> instances;
 
 OptionsDialog::OptionsDialog()
-  : Fl_Window(580, 420, _("TigerVNC options"))
+  : Fl_Window(580, 490, _("TigerVNC options"))
 {
   int x, y;
   Fl_Navigation *navigation;
@@ -190,9 +194,14 @@ void OptionsDialog::loadOptions(void)
 #endif
   else if (preferredEncoding == "Raw")
     rawButton->setonly();
+  if (appleServer && preferredEncoding != "ZRLE" &&
+      preferredEncoding != "Hextile" && preferredEncoding != "Raw")
+    zrleButton->setonly();
 
   if (fullColour)
     fullcolorCheckbox->setonly();
+  else if (appleServer || lowColourLevel == 3)
+    reducedcolorCheckbox->setonly();
   else {
     switch (lowColourLevel) {
     case 0:
@@ -217,6 +226,7 @@ void OptionsDialog::loadOptions(void)
 
   handleAutoselect(autoselectCheckbox, this);
   handleCompression(compressionCheckbox, this);
+  updateServerNote();
 
 #if defined(HAVE_GNUTLS) || defined(HAVE_NETTLE)
   /* Security */
@@ -343,6 +353,7 @@ void OptionsDialog::loadOptions(void)
   handleModifier(nullptr, this);
 
   /* Display */
+  scaleToWindowCheckbox->value(scaleToWindow);
   if (!fullScreen) {
     windowedButton->setonly();
   } else {
@@ -400,6 +411,8 @@ void OptionsDialog::storeOptions(void)
   fullColour.setParam(fullcolorCheckbox->value());
   if (verylowcolorCheckbox->value())
     lowColourLevel.setParam(0);
+  else if (reducedcolorCheckbox->value())
+    lowColourLevel.setParam(3);
   else if (lowcolorCheckbox->value())
     lowColourLevel.setParam(1);
   else if (mediumcolorCheckbox->value())
@@ -515,6 +528,7 @@ void OptionsDialog::storeOptions(void)
     }
   }
 
+  scaleToWindow.setParam(scaleToWindowCheckbox->value());
   fullScreenSelectedMonitors.setMonitors(monitorArrangement->value());
 
   /* Misc. */
@@ -536,6 +550,11 @@ void OptionsDialog::storeOptions(void)
 
   for (iter = callbacks.begin();iter != callbacks.end();++iter)
     iter->first(iter->second);
+  try {
+    savePortableViewerParameters();
+  } catch (const std::exception& e) {
+    fl_alert("Unable to save portable settings:\n%s", e.what());
+  }
 }
 
 
@@ -659,6 +678,12 @@ void OptionsDialog::createCompressionPage(int tx, int ty, int tw, int th)
     fullcolorCheckbox->type(FL_RADIO_BUTTON);
     ty += RADIO_HEIGHT + TIGHT_MARGIN;
 
+    reducedcolorCheckbox = new Fl_Round_Button(LBLRIGHT(tx, ty,
+                                               RADIO_MIN_WIDTH, RADIO_HEIGHT,
+                                               _("16-bit (RGB565)")));
+    reducedcolorCheckbox->type(FL_RADIO_BUTTON);
+    ty += RADIO_HEIGHT + TIGHT_MARGIN;
+
     mediumcolorCheckbox = new Fl_Round_Button(LBLRIGHT(tx, ty,
                                                        RADIO_MIN_WIDTH,
                                                        RADIO_HEIGHT,
@@ -758,9 +783,33 @@ void OptionsDialog::createCompressionPage(int tx, int ty, int tw, int th)
   tx = orig_tx;
   ty += INNER_MARGIN;
 
+  serverNote = new Fl_Box(tx, ty, full_width, 65);
+  serverNote->align(FL_ALIGN_LEFT | FL_ALIGN_TOP | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
+  serverNote->labelsize(12);
   group->end();
 }
 
+void OptionsDialog::setServerProfile(bool apple, int encoding)
+{
+  appleServer = apple;
+  serverEncoding = encoding;
+  for (auto* dialog : instances) {
+    dialog->updateServerNote();
+    handleAutoselect(nullptr, dialog);
+  }
+}
+
+void OptionsDialog::updateServerNote()
+{
+  std::string note;
+  if (appleServer)
+    note = _("macOS: choose Full or 16-bit color. Older 8-bit settings use 16-bit automatically. ");
+  if (serverEncoding >= 0)
+    note += core::format(_("Receiving: %s. "), rfb::encodingName(serverEncoding));
+  note += _("JPEG quality applies only when the server sends JPEG or Tight. "
+            "Compression level changes data size, not image quality.");
+  serverNote->copy_label(note.c_str());
+}
 
 void OptionsDialog::createSecurityPage(int tx, int ty, int tw, int th)
 {
@@ -1130,6 +1179,14 @@ void OptionsDialog::createDisplayPage(int tx, int ty, int tw, int th)
 
   orig_tx = tx;
 
+  scaleToWindowCheckbox = new Fl_Check_Button(LBLRIGHT(tx, ty,
+                                                       CHECK_MIN_WIDTH,
+                                                       CHECK_HEIGHT,
+                                                       _("Scale desktop to window")));
+  scaleToWindowCheckbox->tooltip(_("Preserve aspect ratio and keep the "
+                                  "remote desktop resolution unchanged"));
+  ty += CHECK_HEIGHT + INNER_MARGIN;
+
   /* Display mode */
   ty += GROUP_LABEL_OFFSET;
   displayModeGroup = new Fl_Group(tx, ty, width, 0, _("Display mode"));
@@ -1284,6 +1341,33 @@ void OptionsDialog::handleAutoselect(Fl_Widget* /*widget*/, void *data)
     dialog->colorlevelGroup->activate();
     dialog->qualityGroup->activate();
   }
+  if (appleServer) {
+    dialog->tightButton->deactivate();
+    dialog->jpegButton->deactivate();
+#ifdef HAVE_H264
+    dialog->h264Button->deactivate();
+#endif
+    dialog->mediumcolorCheckbox->deactivate();
+    dialog->lowcolorCheckbox->deactivate();
+    dialog->verylowcolorCheckbox->deactivate();
+    dialog->qualityGroup->deactivate();
+    dialog->jpegCheckbox->deactivate();
+    dialog->compressionCheckbox->deactivate();
+    dialog->compressionGroup->deactivate();
+  } else {
+    dialog->tightButton->activate();
+    dialog->jpegButton->activate();
+#ifdef HAVE_H264
+    dialog->h264Button->activate();
+#endif
+    dialog->mediumcolorCheckbox->activate();
+    dialog->lowcolorCheckbox->activate();
+    dialog->verylowcolorCheckbox->activate();
+    dialog->jpegCheckbox->activate();
+    dialog->compressionCheckbox->activate();
+    dialog->compressionGroup->activate();
+    handleCompression(nullptr, dialog);
+  }
 }
 
 
@@ -1291,7 +1375,7 @@ void OptionsDialog::handleCompression(Fl_Widget* /*widget*/, void *data)
 {
   OptionsDialog *dialog = (OptionsDialog*)data;
 
-  if (dialog->compressionCheckbox->value())
+  if (dialog->compressionCheckbox->value() && !appleServer)
     dialog->compressionInput->activate();
   else
     dialog->compressionInput->deactivate();

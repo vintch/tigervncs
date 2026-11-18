@@ -44,6 +44,7 @@
 #include <rdr/TLSException.h>
 
 #include <rfb/CMsgWriter.h>
+#include <rfb/ClientCompatibility.h>
 #include <rfb/CSecurity.h>
 #include <rfb/Exception.h>
 #include <rfb/Security.h>
@@ -63,6 +64,7 @@
 #include "fltk/util.h"
 #include "AudioOutput.h"
 #include "AuthDialog.h"
+#include "ConnectionStore.h"
 #include "CConn.h"
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
@@ -84,6 +86,8 @@ static const rfb::PixelFormat lowColourPF(8, 6, false, true,
 // 256 colours (2-3 bits per component)
 static const rfb::PixelFormat mediumColourPF(8, 8, false, true,
                                              7, 7, 3, 5, 2, 0);
+static const rfb::PixelFormat reducedColourPF(16, 16, false, true,
+                                              31, 63, 31, 11, 5, 0);
 
 // Time new bandwidth estimates are weighted against (in ms)
 static const unsigned bpsEstimateWindow = 1000;
@@ -122,6 +126,7 @@ CConn::CConn()
 
 CConn::~CConn()
 {
+  OptionsDialog::setServerProfile(false, -1);
   close();
 
   OptionsDialog::removeCallback(handleOptions);
@@ -308,12 +313,13 @@ void CConn::processNextMsg(core::Timer*)
       abort_connection(_("The connection was dropped by the server "
                        "before the session could be established."));
     } else {
-      disconnect();
+      abort_connection(_("The server closed the connection unexpectedly."));
     }
   } catch (rfb::auth_cancelled& e) {
     vlog.info("%s", e.what());
     disconnect();
   } catch (rfb::auth_error& e) {
+    ConnectionStore::rejectActivePassword();
     savedUsername.clear();
     savedPassword.clear();
     vlog.error(_("Authentication failed: %s"), e.what());
@@ -350,32 +356,39 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
   int ret_val;
 
   assert(password);
+  ConnectionCredentials credentials;
+  bool savedProfile = ConnectionStore::activeCredentials(serverHost, serverPort, credentials);
+  if (savedProfile && credentials.hasPassword) {
+    if (user) *user = credentials.username;
+    *password = credentials.password;
+    return;
+  }
   char *envUsername = getenv("VNC_USERNAME");
   char *envPassword = getenv("VNC_PASSWORD");
 
-  if(user && envUsername && envPassword) {
+  if(!savedProfile && user && envUsername && envPassword) {
     *user = envUsername;
     *password = envPassword;
     return;
   }
 
-  if (!user && envPassword) {
+  if (!savedProfile && !user && envPassword) {
     *password = envPassword;
     return;
   }
 
-  if (user && !savedUsername.empty() && !savedPassword.empty()) {
+  if (!savedProfile && user && !savedUsername.empty() && !savedPassword.empty()) {
     *user = savedUsername;
     *password = savedPassword;
     return;
   }
 
-  if (!user && !savedPassword.empty()) {
+  if (!savedProfile && !user && !savedPassword.empty()) {
     *password = savedPassword;
     return;
   }
 
-  if (!user && passwordFileName[0]) {
+  if (!savedProfile && !user && passwordFileName[0]) {
     std::vector<uint8_t> obfPwd(8);
     FILE* fp;
 
@@ -394,6 +407,7 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
   }
 
   AuthDialog d(isSecure(), user != nullptr, password != nullptr);
+  if (savedProfile) d.setUser(credentials.username);
   d.show();
   while (d.shown())
     Fl::wait();
@@ -426,6 +440,7 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
 // server the pixel format and encodings to use and request the first update.
 void CConn::initDone()
 {
+  OptionsDialog::setServerProfile(isAppleServer(), -1);
   desktop = new DesktopWindow(server.width(), server.height(), this);
 
   // Force a switch to the format and encoding we'd like
@@ -880,8 +895,13 @@ bool CConn::dataRect(const core::Rect& r, int encoding)
 {
   bool ret;
 
-  if (encoding != rfb::encodingCopyRect)
+  if (encoding != rfb::encodingCopyRect) {
+    if (lastServerEncoding != (unsigned)encoding) {
+      vlog.info("Server is using %s encoding", rfb::encodingName(encoding));
+      OptionsDialog::setServerProfile(isAppleServer(), encoding);
+    }
     lastServerEncoding = encoding;
+  }
 
   ret = CConnection::dataRect(r, encoding);
 
@@ -968,7 +988,7 @@ void CConn::updateEncoding()
     encNum = rfb::encodingNum(::preferredEncoding.getValueStr().c_str());
 
   if (encNum != -1)
-    setPreferredEncoding(encNum);
+    setPreferredEncoding(rfb::compatibleEncoding(isAppleServer(), encNum));
 }
 
 void CConn::updateCompressLevel()
@@ -1034,8 +1054,10 @@ void CConn::updatePixelFormat()
     else if (lowColourLevel == 1)
       pf = lowColourPF;
     else
-      pf = mediumColourPF;
+      pf = lowColourLevel == 3 ? reducedColourPF : mediumColourPF;
   }
+
+  pf = rfb::compatiblePixelFormat(isAppleServer(), pf);
 
   if (pf != server.pf()) {
     char str[256];

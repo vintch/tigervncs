@@ -45,6 +45,8 @@
 #include "CConn.h"
 #include "Surface.h"
 #include "Viewport.h"
+#include "ScaleGeometry.h"
+#include "PortableSettings.h"
 #include "touch.h"
 #include "fltk/event_dispatch_handler.h"
 
@@ -353,9 +355,6 @@ void DesktopWindow::resizeFramebuffer(int new_w, int new_h)
 {
   bool maximized;
 
-  if ((new_w == viewport->w()) && (new_h == viewport->h()))
-    return;
-
   maximized = false;
 
 #ifdef WIN32
@@ -372,13 +371,13 @@ void DesktopWindow::resizeFramebuffer(int new_w, int new_h)
   // If we're letting the viewport match the window perfectly, then
   // keep things that way for the new size, otherwise just keep things
   // like they are.
-  if (!fullscreen_active() && !maximized && !pendingRemoteResize &&
+  if (!scaleToWindow && !fullscreen_active() && !maximized && !pendingRemoteResize &&
       !Fl::has_timeout(handleResizeTimeout, this)) {
     if ((w() == viewport->w()) && (h() == viewport->h()))
       size(new_w, new_h);
   }
 
-  viewport->size(new_w, new_h);
+  viewport->resizeFramebuffer(new_w, new_h);
 
   repositionWidgets();
 }
@@ -399,6 +398,14 @@ void DesktopWindow::setCursor()
   viewport->setCursor();
 }
 
+void DesktopWindow::setScaleToWindow(bool enabled)
+{
+  scaleToWindow.setParam(enabled);
+  Fl::remove_timeout(handleResizeTimeout, this);
+  repositionWidgets();
+  redraw();
+}
+
 
 void DesktopWindow::setCursorPos(const core::Point& pos)
 {
@@ -406,15 +413,16 @@ void DesktopWindow::setCursorPos(const core::Point& pos)
     // Do nothing if we do not have the mouse captured.
     return;
   }
+  core::Point local = viewport->desktopToWindow(pos);
 #if defined(WIN32)
-  SetCursorPos(pos.x + x_root() + viewport->x(),
-               pos.y + y_root() + viewport->y());
+  SetCursorPos(local.x + x_root() + viewport->x(),
+               local.y + y_root() + viewport->y());
 #elif defined(__APPLE__)
-  cocoa_set_cursor_pos(pos.x + x_root() + viewport->x(),
-                       pos.y + y_root() + viewport->y());
+  cocoa_set_cursor_pos(local.x + x_root() + viewport->x(),
+                       local.y + y_root() + viewport->y());
 #else // Assume this is Xlib
-  x11_warp_pointer(pos.x + x_root() + viewport->x(),
-                   pos.y + y_root() + viewport->y());
+  x11_warp_pointer(local.x + x_root() + viewport->x(),
+                   local.y + y_root() + viewport->y());
 #endif
 }
 
@@ -1279,7 +1287,7 @@ void DesktopWindow::remoteResize()
   if (viewOnly)
     return;
 
-  if (!::remoteResize)
+  if (scaleToWindow || !::remoteResize)
     return;
   if (!cc->server.supportsSetDesktopSize)
     return;
@@ -1477,6 +1485,15 @@ void DesktopWindow::repositionWidgets()
 {
   int new_x, new_y;
 
+  core::Point display = fitDesktop(cc->server.width(), cc->server.height(),
+                                   w(), h(), scaleToWindow);
+  bool displayResized = viewport->w() != display.x || viewport->h() != display.y;
+  viewport->size(display.x, display.y);
+  // A one-pixel aspect-ratio change need not move the centered viewport.
+  // Clear the previous image's margins even in that case.
+  if (displayResized)
+    damage(FL_DAMAGE_SCROLL);
+
   // Viewport position
 
   new_x = viewport->x();
@@ -1575,6 +1592,8 @@ void DesktopWindow::handleOptions(void *data)
     self->fullscreen_on();
   else if (!fullScreen && self->fullscreen_active())
     self->fullscreen_off();
+  self->repositionWidgets();
+  self->redraw();
 }
 
 void DesktopWindow::handleFullscreenTimeout(void *data)

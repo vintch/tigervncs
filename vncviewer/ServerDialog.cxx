@@ -55,6 +55,7 @@
 #include "OptionsDialog.h"
 #include "vncviewer.h"
 #include "parameters.h"
+#include "PortableSettings.h"
 
 static core::LogWriter vlog("ServerDialog");
 
@@ -102,8 +103,14 @@ ServerDialog::ServerDialog()
   // Symmetric margin around bottom button bar
   y += OUTER_MARGIN - INNER_MARGIN;
 
-  button = new Fl_Button(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, _("About..."));
+  button = new Fl_Button(x, y, BUTTON_HEIGHT, BUTTON_HEIGHT, "?");
+  button->tooltip(_("About TigerVNC"));
   button->callback(this->handleAbout, this);
+
+  managerButton = new Fl_Button(x + BUTTON_HEIGHT + INNER_MARGIN, y,
+                                BUTTON_WIDTH, BUTTON_HEIGHT, "Computers");
+  managerButton->type(FL_TOGGLE_BUTTON);
+  managerButton->callback(managerAction, this);
 
   x2 = w() - OUTER_MARGIN - BUTTON_WIDTH*2 - INNER_MARGIN*1;
 
@@ -120,6 +127,8 @@ ServerDialog::ServerDialog()
   /* Needed for resize to work sanely */
   resizable(nullptr);
   h(y-INNER_MARGIN+OUTER_MARGIN);
+  collapsedHeight = h();
+  createManager(collapsedHeight);
 
   callback(this->handleCancel, this);
 }
@@ -133,8 +142,17 @@ ServerDialog::~ServerDialog()
 std::string ServerDialog::run(const char* servername)
 {
   ServerDialog dialog;
+  ConnectionStore::clearActive();
 
   dialog.serverName->value(servername);
+
+  try {
+    dialog.refreshManager();
+    dialog.expandManager(dialog.managerData["manager"].get("expanded", false).asBool());
+  } catch (std::exception& e) {
+    dialog.managerButton->deactivate();
+    fl_alert("Unable to load saved computers:\n\n%s", e.what());
+  }
 
   dialog.show();
 
@@ -273,6 +291,7 @@ void ServerDialog::handleCancel(Fl_Widget* /*widget*/, void* data)
   ServerDialog *dialog = (ServerDialog*)data;
 
   dialog->serverName->value("");
+  ConnectionStore::clearActive();
   dialog->hide();
 }
 
@@ -282,10 +301,21 @@ void ServerDialog::handleConnect(Fl_Widget* /*widget*/, void *data)
   ServerDialog *dialog = (ServerDialog*)data;
   const char* servername = dialog->serverName->value();
 
+  if (!servername || !servername[0]) return;
+  try {
+    // Unlock before hiding the dialog; both Connect and double-click use this path.
+    ConnectionCredentials credentials;
+    dialog->store.prepareConnection(dialog->selectedComputer, servername, credentials);
+  } catch (std::exception& e) {
+    ConnectionStore::clearActive();
+    fl_alert("Unable to use this saved computer:\n\n%s", e.what());
+    return;
+  }
+
   dialog->hide();
 
   try {
-    saveViewerParameters(nullptr, servername);
+    savePortableViewerParameters();
   } catch (std::exception& e) {
     vlog.error(_("Unable to save the default configuration: %s"),
                e.what());
@@ -338,7 +368,11 @@ void ServerDialog::loadServerHistory()
   serverHistory.clear();
 
 #ifdef _WIN32
-  rawHistory = loadHistoryFromRegKey();
+  auto document = PortableConfig(PortableConfig::executablePath()).read();
+  if (document["history"].isArray()) {
+    for (const auto& entry : document["history"])
+      if (entry.isString()) rawHistory.push_back(entry.asString());
+  } else rawHistory = loadHistoryFromRegKey();
 #else
 
   const char* stateDir = core::getvncstatedir();
@@ -419,7 +453,11 @@ void ServerDialog::loadServerHistory()
 void ServerDialog::saveServerHistory()
 {
 #ifdef _WIN32
-  saveHistoryToRegKey(serverHistory);
+  PortableConfig file(PortableConfig::executablePath());
+  auto document = file.read();
+  document["history"] = Json::Value(Json::arrayValue);
+  for (const auto& entry : serverHistory) document["history"].append(entry);
+  file.write(document);
   return;
 #endif
 

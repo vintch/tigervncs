@@ -31,6 +31,8 @@
 #endif
 
 #include "parameters.h"
+#include "PortableConfig.h"
+#include "PortableSettings.h"
 
 #include <core/Configuration.h>
 #include <core/Exception.h>
@@ -112,8 +114,8 @@ core::AliasParameter
 core::IntParameter
   lowColourLevel("LowColorLevel",
                  _("Color level to use on slow connections, "
-                   "0 = Very Low, 1 = Low, 2 = Medium"),
-                 2, 0, 2);
+                   "0 = Very Low, 1 = Low, 2 = Medium, 3 = 16-bit"),
+                 2, 0, 3);
 core::AliasParameter
   lowColourLevelAlias("LowColourLevel", &lowColourLevel);
 core::EnumParameter
@@ -191,6 +193,12 @@ core::BoolParameter
                _("Dynamically resize the remote desktop size as the "
                  "size of the local client window changes"),
                true);
+
+core::BoolParameter
+  scaleToWindow("ScaleToWindow",
+                _("Scale the remote desktop to fit the window, preserving "
+                  "its aspect ratio, instead of resizing the remote desktop"),
+                false);
 
 core::BoolParameter
   viewOnly("ViewOnly",
@@ -288,6 +296,7 @@ static core::Parameter* parameterArray[] = {
   &rfb::CConnection::noJpeg,
   &qualityLevel,
   /* Display */
+  &scaleToWindow,
   &fullScreen,
   &fullScreenMode,
   &fullScreenSelectedMonitors,
@@ -311,6 +320,67 @@ static core::Parameter* readOnlyParameterArray[] = {
   &fullScreenAllMonitors,
   &dotWhenNoCursor
 };
+
+// Only persist user preferences here, never transient credentials, test flags,
+// a server's negotiated pixel format, or its automatically chosen JPEG quality.
+static core::Parameter* portableParameters[] = {
+  &scaleToWindow, &autoSelect, &fullColour, &lowColourLevel, &preferredEncoding,
+  &customCompressLevel, &compressLevel, &rfb::CConnection::noJpeg, &qualityLevel
+};
+
+void savePortableViewerParameters()
+{
+  PortableConfig config(PortableConfig::executablePath());
+  // Re-read before updating so unrelated connection fields survive a save.
+  Json::Value document = config.read();
+  for (auto* parameter : portableParameters) {
+    Json::Value value;
+    if (auto* boolParameter = dynamic_cast<core::BoolParameter*>(parameter))
+      value = bool(*boolParameter);
+    else if (auto* integer = dynamic_cast<core::IntParameter*>(parameter))
+      value = int(*integer);
+    else
+      value = parameter->getValueStr();
+    document["viewer"][parameter->getName()] = value;
+  }
+  config.write(document);
+}
+
+void loadPortableViewerParameters()
+{
+  PortableConfig config(PortableConfig::executablePath());
+  Json::Value document = config.read();
+  std::vector<std::string> previous;
+  for (auto* parameter : portableParameters)
+    previous.push_back(parameter->getValueStr());
+  try {
+    for (auto* parameter : portableParameters) {
+      const Json::Value& value = document["viewer"][parameter->getName()];
+      if (value.isNull())
+        continue;
+      std::string text;
+      if (dynamic_cast<core::BoolParameter*>(parameter) && value.isBool())
+        text = value.asBool() ? "1" : "0";
+      else if (dynamic_cast<core::IntParameter*>(parameter) && value.isInt())
+        text = std::to_string(value.asInt());
+      else if (!dynamic_cast<core::BoolParameter*>(parameter) &&
+               !dynamic_cast<core::IntParameter*>(parameter) && value.isString())
+        text = value.asString();
+      else
+        throw std::runtime_error(std::string("Invalid portable setting: ") + parameter->getName());
+      if (!parameter->setParam(text.c_str()))
+        throw std::runtime_error(std::string("Invalid portable setting: ") + parameter->getName());
+    }
+  } catch (...) {
+    size_t index = 0;
+    for (auto* parameter : portableParameters)
+      parameter->setParam(previous[index++].c_str());
+    throw;
+  }
+  // Create the initial file next to the exe; command-line overrides are applied
+  // afterwards and do not silently change the saved preferences.
+  savePortableViewerParameters();
+}
 
 // Encoding Table
 static const struct EscapeMap {

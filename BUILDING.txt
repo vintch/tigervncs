@@ -19,6 +19,8 @@ Development kits for the following packages:
 
 -- FLTK 1.3.3 or later
 
+-- JsonCpp (including its static library for the portable Windows build)
+
 -- If building TLS support:
    * GnuTLS 3.x
    * See "Building TLS Support" below.

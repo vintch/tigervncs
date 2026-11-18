@@ -159,6 +159,11 @@ std::string AuthDialog::getUser()
   return username->value();
 }
 
+void AuthDialog::setUser(const std::string& user)
+{
+  if (username) username->value(user.c_str());
+}
+
 std::string AuthDialog::getPassword()
 {
   if (passwd)

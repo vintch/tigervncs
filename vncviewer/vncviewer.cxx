@@ -62,6 +62,7 @@
 #include "fltk/theme.h"
 #include "fltk/util.h"
 #include "parameters.h"
+#include "PortableSettings.h"
 #include "CConn.h"
 #include "ServerDialog.h"
 #include "touch.h"
@@ -603,6 +604,13 @@ int main(int argc, char** argv)
     vlog.error("%s", e.what());
   }
 
+  try {
+    loadPortableViewerParameters();
+  } catch (const std::exception& e) {
+    vlog.error("%s", e.what());
+    fl_alert("Unable to load portable settings:\n%s", e.what());
+  }
+
   for (int i = 1; i < argc;) {
     int ret;
 
@@ -742,6 +750,10 @@ int main(int argc, char** argv)
 #endif
   }
 
+#ifdef TIGERVNCS_CONNECTION_STUB
+  extern int runConnectionStub(const std::string&);
+  return runConnectionStub(vncServerName);
+#endif
   inMainloop = true;
   mainloop(vncServerName.c_str(), sock);
   inMainloop = false;

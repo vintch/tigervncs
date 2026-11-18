@@ -13,6 +13,40 @@ endif()
 
 enable_testing()
 
+add_executable(clientcompatibility clientcompatibility.cxx)
+target_link_libraries(clientcompatibility PRIVATE rfbclient GTest::gtest_main)
+gtest_discover_tests(clientcompatibility)
+
+add_executable(scalegeometry scalegeometry.cxx)
+target_link_libraries(scalegeometry PRIVATE core GTest::gtest_main)
+gtest_discover_tests(scalegeometry)
+
+add_executable(portableconfig portableconfig.cxx ../../vncviewer/PortableConfig.cxx)
+target_include_directories(portableconfig SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
+target_link_libraries(portableconfig PRIVATE core GTest::gtest_main jsoncpp_static ${FLTK_LIBRARIES})
+gtest_discover_tests(portableconfig)
+
+if(WIN32)
+  add_executable(connection_fixture EXCLUDE_FROM_ALL ../integration/connection_fixture.cxx
+    ../../vncviewer/ConnectionStore.cxx ../../vncviewer/CredentialVault.cxx
+    ../../vncviewer/PortableConfig.cxx)
+  target_include_directories(connection_fixture SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
+  target_link_libraries(connection_fixture PRIVATE network core jsoncpp_static
+    ${FLTK_LIBRARIES} bcrypt crypt32)
+  add_executable(connectionstore connectionstore.cxx ../../vncviewer/ConnectionStore.cxx
+    ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx
+    ../../vncviewer/ConnectionTree.cxx)
+  target_include_directories(connectionstore SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
+  target_link_libraries(connectionstore PRIVATE network core GTest::gtest_main jsoncpp_static
+    ${FLTK_LIBRARIES} bcrypt crypt32)
+  gtest_discover_tests(connectionstore)
+  add_executable(scaled_surface scaled_surface.cxx
+    ../../vncviewer/Surface.cxx ../../vncviewer/Surface_Win32.cxx)
+  target_include_directories(scaled_surface SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
+  target_link_libraries(scaled_surface PRIVATE core GTest::gtest_main ${FLTK_LIBRARIES} msimg32)
+  gtest_discover_tests(scaled_surface)
+endif()
+
 include_directories(${CMAKE_SOURCE_DIR}/vncviewer)
 
 add_executable(configargs configargs.cxx)

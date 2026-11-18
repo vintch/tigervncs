@@ -61,6 +61,7 @@ public:
 
   // Server-provided cursor position
   void setCursorPos(const core::Point& pos);
+  void setScaleToWindow(bool enabled);
 
   // Change client LED state
   void setLEDState(unsigned int state);

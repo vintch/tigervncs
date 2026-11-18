@@ -1,0 +1,10 @@
+The scaling implementation in Surface_*.cxx and Viewport, together with the
+ScaleToWindow option, is adapted from teloverge/tigervnc:
+https://github.com/TigerVNC/tigervnc/pull/2169
+Branch upstream/scale-desktop-to-window, commit
+ec33e2727e9a49296b0e8285f249311e9c600044.
+
+The source remains under TigerVNC's GPL-2.0-or-later license. Existing copyright
+notices are retained. The adaptation preserves this fork's newer desktop-resize
+handling and adds the context-menu switch, portable JSON preferences, geometry
+helpers, and verification coverage. These changes were made with AI assistance.

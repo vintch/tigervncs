@@ -21,6 +21,9 @@
 #include <config.h>
 #endif
 
+#include <algorithm>
+#include "ScaleGeometry.h"
+#include "PortableSettings.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -81,7 +84,7 @@ static core::LogWriter vlog("Viewport");
 
 // Menu constants
 
-enum { ID_DISCONNECT, ID_FULLSCREEN, ID_MINIMIZE, ID_RESIZE,
+enum { ID_DISCONNECT, ID_FULLSCREEN, ID_MINIMIZE, ID_RESIZE, ID_SCALE,
        ID_CTRL, ID_ALT, ID_CTRLALTDEL,
        ID_REFRESH, ID_OPTIONS, ID_INFO, ID_ABOUT };
 
@@ -95,6 +98,7 @@ static const int FAKE_KEY_CODE = 0xffff;
 
 Viewport::Viewport(int w, int h, CConn* cc_)
   : Fl_Widget(0, 0, w, h), cc(cc_), frameBuffer(nullptr),
+    scaledBuffer(nullptr), scaledBufferDirty(true),
     lastPointerPos(0, 0), lastButtonMask(0),
     keyboard(nullptr), shortcutBypass(false), shortcutActive(false),
     firstLEDState(true), pendingClientClipboard(false),
@@ -125,6 +129,7 @@ Viewport::Viewport(int w, int h, CConn* cc_)
   cc->setFramebuffer(frameBuffer);
 
   contextMenu = new Fl_Menu_Button(0, 0, 0, 0);
+
   // Setting box type to FL_NO_BOX prevents it from trying to draw the
   // button component (which we don't want)
   contextMenu->box(FL_NO_BOX);
@@ -150,6 +155,8 @@ Viewport::Viewport(int w, int h, CConn* cc_)
 
 Viewport::~Viewport()
 {
+  delete scaledBuffer;
+
   // Unregister all timeouts in case they get a change tro trigger
   // again later when this object is already gone.
   Fl::remove_timeout(handlePointerTimeout, this);
@@ -182,7 +189,14 @@ void Viewport::updateWindow()
   core::Rect r;
 
   r = frameBuffer->getDamage();
-  damage(FL_DAMAGE_USER1, r.tl.x + x(), r.tl.y + y(), r.width(), r.height());
+  if (r.is_empty())
+    return;
+
+  scaledBufferDirty = true;
+  if (scaleToWindow)
+    damage(FL_DAMAGE_USER1);
+  else
+    damage(FL_DAMAGE_USER1, r.tl.x + x(), r.tl.y + y(), r.width(), r.height());
 }
 
 static const char * dotcursor_xpm[] = {
@@ -255,8 +269,17 @@ void Viewport::showCursor()
 
   if (cursorIsBlank && alwaysCursor && (cursorType == "system")) {
     window()->cursor(FL_CURSOR_DEFAULT);
-  } else {
+  } else if ((w() == frameBuffer->width()) &&
+             (h() == frameBuffer->height())) {
     window()->cursor(cursor, cursorHotspot.x, cursorHotspot.y);
+  } else {
+    core::Point size = desktopToWindow({cursor->w(), cursor->h()});
+    core::Point hotspot = desktopToWindow(cursorHotspot);
+    Fl_RGB_Image* scaled = static_cast<Fl_RGB_Image*>(
+      cursor->copy(std::max(1, size.x), std::max(1, size.y)));
+    window()->cursor(scaled, std::min(hotspot.x, scaled->w() - 1),
+                      std::min(hotspot.y, scaled->h() - 1));
+    delete scaled;
   }
 }
 
@@ -377,6 +400,28 @@ void Viewport::pushLEDState()
 }
 
 
+Surface* Viewport::displayBuffer()
+{
+  if ((w() == frameBuffer->width()) && (h() == frameBuffer->height()))
+    return frameBuffer;
+
+  if (!scaledBuffer) {
+    scaledBuffer = new Surface(w(), h());
+    scaledBufferDirty = true;
+  }
+  if (scaledBufferDirty) {
+    frameBuffer->drawScaled(scaledBuffer, 0, 0, w(), h());
+    scaledBufferDirty = false;
+  }
+  return scaledBuffer;
+}
+
+core::Point Viewport::desktopToWindow(const core::Point& pos) const
+{
+  return {int((int64_t)pos.x * w() / frameBuffer->width()),
+          int((int64_t)pos.y * h() / frameBuffer->height())};
+}
+
 void Viewport::draw(Surface* dst)
 {
   int X, Y, W, H;
@@ -386,7 +431,7 @@ void Viewport::draw(Surface* dst)
   if ((W == 0) || (H == 0))
     return;
 
-  frameBuffer->draw(dst, X - x(), Y - y(), X, Y, W, H);
+  displayBuffer()->draw(dst, X - x(), Y - y(), X, Y, W, H);
 }
 
 
@@ -399,11 +444,11 @@ void Viewport::draw()
   if ((W == 0) || (H == 0))
     return;
 
-  frameBuffer->draw(X - x(), Y - y(), X, Y, W, H);
+  displayBuffer()->draw(X - x(), Y - y(), X, Y, W, H);
 }
 
 
-void Viewport::resize(int x, int y, int w, int h)
+void Viewport::resizeFramebuffer(int w, int h)
 {
   if ((w != frameBuffer->width()) || (h != frameBuffer->height())) {
     vlog.debug("Resizing framebuffer from %dx%d to %dx%d",
@@ -414,7 +459,22 @@ void Viewport::resize(int x, int y, int w, int h)
     cc->setFramebuffer(frameBuffer);
   }
 
+  delete scaledBuffer;
+  scaledBuffer = nullptr;
+  redraw();
+}
+
+void Viewport::resize(int x, int y, int w, int h)
+{
+  w = std::max(1, w);
+  h = std::max(1, h);
+  if ((w != this->w()) || (h != this->h())) {
+    delete scaledBuffer;
+    scaledBuffer = nullptr;
+  }
   Fl_Widget::resize(x, y, w, h);
+  if (Fl::belowmouse() == this)
+    showCursor();
 }
 
 
@@ -655,7 +715,9 @@ void Viewport::flushPendingClipboard()
 void Viewport::handlePointerEvent(const core::Point& pos,
                                   uint16_t buttonMask)
 {
-  filterPointerEvent(pos, buttonMask);
+  core::Point remote = windowToDesktop(pos, w(), h(),
+                                       frameBuffer->width(), frameBuffer->height());
+  filterPointerEvent(remote, buttonMask);
 }
 
 
@@ -938,6 +1000,9 @@ void Viewport::initContextMenu()
                 FL_MENU_TOGGLE | (window()->fullscreen_active()?FL_MENU_VALUE:0));
   fltk_menu_add(contextMenu, C_("ContextMenu|", "Minimi&ze"),
                 0, nullptr, (void*)ID_MINIMIZE, 0);
+  fltk_menu_add(contextMenu, C_("ContextMenu|", "&Scale desktop to window"),
+                0, nullptr, (void*)ID_SCALE,
+                FL_MENU_TOGGLE | (scaleToWindow ? FL_MENU_VALUE : 0));
   fltk_menu_add(contextMenu, C_("ContextMenu|", "Resize &window to session"),
                 0, nullptr, (void*)ID_RESIZE,
                 (window()->fullscreen_active()?FL_MENU_INACTIVE:0) |
@@ -1017,7 +1082,15 @@ void Viewport::popupContextMenu()
   case ID_RESIZE:
     if (window()->fullscreen_active())
       break;
-    window()->size(w(), h());
+    window()->size(frameBuffer->width(), frameBuffer->height());
+    break;
+  case ID_SCALE:
+    ((DesktopWindow*)window())->setScaleToWindow(!scaleToWindow);
+    try {
+      savePortableViewerParameters();
+    } catch (const std::exception& e) {
+      fl_alert("Unable to save portable settings:\n%s", e.what());
+    }
     break;
   case ID_CTRL:
     if (m->value())

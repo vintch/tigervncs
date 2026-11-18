@@ -43,6 +43,7 @@ protected:
 
 public:
   static void showDialog(void);
+  static void setServerProfile(bool apple, int encoding);
 
   static void addCallback(OptionsCallback *cb, void *data = nullptr);
   static void removeCallback(OptionsCallback *cb);
@@ -80,6 +81,10 @@ protected:
 
 protected:
   static std::map<OptionsCallback*, void*> callbacks;
+  static bool appleServer;
+  static int serverEncoding;
+  void updateServerNote();
+  Fl_Box* serverNote;
 
   /* Compression */
   Fl_Check_Button *autoselectCheckbox;
@@ -97,6 +102,7 @@ protected:
 
   Fl_Group *colorlevelGroup;
   Fl_Round_Button *fullcolorCheckbox;
+  Fl_Round_Button *reducedcolorCheckbox;
   Fl_Round_Button *mediumcolorCheckbox;
   Fl_Round_Button *lowcolorCheckbox;
   Fl_Round_Button *verylowcolorCheckbox;
@@ -157,6 +163,7 @@ protected:
 
   /* Display */
   Fl_Group *displayModeGroup;
+  Fl_Check_Button *scaleToWindowCheckbox;
   Fl_Round_Button *windowedButton;
   Fl_Round_Button *currentMonitorButton;
   Fl_Round_Button *allMonitorsButton;

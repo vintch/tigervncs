@@ -254,8 +254,10 @@ specific source file if you know the name of its "LogWriter".  Default is
 .TP
 .B \-LowColorLevel, \-LowColourLevel \fIlevel\fP
 Selects the reduced color level to use on slow links.  \fIlevel\fP can range
-from 0 to 2, 0 meaning 8 colors, 1 meaning 64 colors (the default), 2 meaning
-256 colors. Note that decision if reduced color level is used is made by
+from 0 to 3, 0 meaning 8 colors, 1 meaning 64 colors, 2 meaning
+256 colors, and 3 meaning 16-bit RGB565. Apple Screen Sharing uses RGB565
+instead of requested 8-bit formats to prevent server disconnects.
+Note that decision if reduced color level is used is made by
 vncviewer. If you would like to force vncviewer to use reduced color level
 use \fB-AutoSelect=0\fP parameter.
 .
@@ -299,6 +301,13 @@ JPEG quality level. 0 = Low, 9 = High. May be adjusted automatically if
 Display a dialog with any error and offer the possibility to retry
 establishing the connection. In case this is off no dialog to
 re-connect will be offered. Default is on.
+.
+.TP
+.B \-ScaleToWindow
+Scale the remote desktop to fit the viewer window, preserving its aspect
+ratio. The image scales up or down as the window is resized. This takes
+precedence over RemoteResize and leaves the remote desktop resolution
+unchanged. Default is off.
 .
 .TP
 .B \-RemoteResize

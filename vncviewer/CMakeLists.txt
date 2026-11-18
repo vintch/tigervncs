@@ -3,6 +3,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 add_executable(vncviewer
+  PortableConfig.cxx
+  ConnectionStore.cxx
+  ConnectionManager.cxx
+  ConnectionTree.cxx
+  CredentialVault.cxx
   fltk/Fl_Monitor_Arrangement.cxx
   fltk/Fl_Suggestion_Item_.cxx
   fltk/Fl_Suggestion_Window_.cxx
@@ -70,6 +75,7 @@ endif()
 target_include_directories(vncviewer SYSTEM PUBLIC ${FLTK_INCLUDE_DIR})
 target_link_libraries(vncviewer PRIVATE rfbclient rfb network rdr core)
 target_link_libraries(vncviewer PRIVATE ${FLTK_LIBRARIES})
+target_link_libraries(vncviewer PRIVATE jsoncpp_static)
 
 if(GNUTLS_FOUND)
   target_include_directories(vncviewer SYSTEM PUBLIC ${GNUTLS_INCLUDE_DIR})
@@ -81,7 +87,7 @@ if(GNUTLS_FOUND)
 endif()
 
 if(WIN32)
-  target_link_libraries(vncviewer PRIVATE msimg32 winmm)
+  target_link_libraries(vncviewer PRIVATE msimg32 winmm bcrypt crypt32)
 elseif(APPLE)
   target_link_libraries(vncviewer PRIVATE "-framework Cocoa")
   target_link_libraries(vncviewer PRIVATE "-framework Carbon")
@@ -97,6 +103,19 @@ else()
   if(X11_Xrandr_LIB)
     target_link_libraries(vncviewer PRIVATE ${X11_Xrandr_LIB})
   endif()
+endif()
+
+if(WIN32)
+  # Explicit test-only build: identical dialog, but it checks credentials via
+  # a stub before any VNC connection is attempted. Never installed/distributed.
+  get_target_property(manager_test_sources vncviewer SOURCES)
+  get_target_property(manager_test_includes vncviewer INCLUDE_DIRECTORIES)
+  get_target_property(manager_test_links vncviewer LINK_LIBRARIES)
+  add_executable(vncviewer_manager_test EXCLUDE_FROM_ALL ${manager_test_sources}
+    ../tests/integration/connection_stub.cxx)
+  target_include_directories(vncviewer_manager_test PRIVATE ${manager_test_includes})
+  target_compile_definitions(vncviewer_manager_test PRIVATE TIGERVNCS_CONNECTION_STUB)
+  target_link_libraries(vncviewer_manager_test PRIVATE ${manager_test_links})
 endif()
 
 install(TARGETS vncviewer DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})

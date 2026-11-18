@@ -39,6 +39,7 @@ public:
   int result();
 
   std::string getUser();
+  void setUser(const std::string& user);
   std::string getPassword();
   bool getKeepPassword();
 

@@ -1,0 +1,202 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#include "ConnectionStore.h"
+#include <network/TcpSocket.h>
+#include <core/string.h>
+#include <algorithm>
+#include <cctype>
+#include <map>
+#include <set>
+#include <stdexcept>
+
+std::string ConnectionStore::activeId, ConnectionStore::activeAddress, ConnectionStore::activePath;
+bool ConnectionStore::activePasswordAllowed = true;
+
+namespace {
+std::string trim(const std::string& value) {
+  auto a = value.find_first_not_of(" \t\r\n");
+  if (a == std::string::npos) return "";
+  return value.substr(a, value.find_last_not_of(" \t\r\n") - a + 1);
+}
+void text(const std::string& value, const char* field, size_t maximum, bool empty = false) {
+  if ((!empty && value.empty()) || value.size() > maximum || !core::isValidUTF8(value.c_str()) ||
+      std::any_of(value.begin(), value.end(), [](unsigned char c) { return c < 32; }))
+    throw std::runtime_error(std::string("Invalid ") + field);
+}
+int indexOf(const Json::Value& array, const std::string& id) {
+  for (Json::ArrayIndex i = 0; i < array.size(); ++i)
+    if (array[i]["id"].asString() == id) return int(i);
+  return -1;
+}
+void validate(Json::Value& document) {
+  for (auto collection : {"connections", "folders"}) {
+    if (document[collection].isNull()) document[collection] = Json::Value(Json::arrayValue);
+    if (!document[collection].isArray() || document[collection].size() > 10000)
+      throw std::runtime_error(std::string("Invalid saved ") + collection);
+  }
+  if (document["manager"].isNull()) document["manager"] = Json::Value(Json::objectValue);
+  if (!document["manager"].isObject()) throw std::runtime_error("Invalid manager settings");
+  if (!document["manager"]["expanded"].isNull() && !document["manager"]["expanded"].isBool())
+    throw std::runtime_error("Invalid manager expansion state");
+  std::set<std::string> ids;
+  std::map<std::string, std::string> parents;
+  for (const auto& folder : document["folders"]) {
+    if (!folder.isObject() || !folder["id"].isString() || !folder["name"].isString() ||
+        !folder["parentId"].isString()) throw std::runtime_error("Invalid folder entry");
+    auto id = folder["id"].asString();
+    text(id, "folder identifier", 64);
+    text(folder["name"].asString(), "folder name", 256);
+    if (!ids.insert(id).second) throw std::runtime_error("Duplicate saved identifier");
+    parents[id] = folder["parentId"].asString();
+  }
+  for (const auto& folder : parents) {
+    std::set<std::string> seen;
+    std::string current = folder.first;
+    while (!current.empty()) {
+      auto parent = parents.find(current);
+      if (parent == parents.end()) throw std::runtime_error("Folder parent does not exist");
+      if (!seen.insert(current).second) throw std::runtime_error("A folder cannot contain itself");
+      if (seen.size() > 128) throw std::runtime_error("Folder nesting exceeds 128 levels");
+      current = parent->second;
+    }
+  }
+  for (const auto& connection : document["connections"]) {
+    if (!connection.isObject() || !connection["id"].isString() || !connection["name"].isString() ||
+        !connection["address"].isString() || !connection["username"].isString() ||
+        !connection["folderId"].isString()) throw std::runtime_error("Invalid computer entry");
+    auto id = connection["id"].asString();
+    text(id, "computer identifier", 64);
+    text(connection["name"].asString(), "computer name", 256);
+    text(connection["address"].asString(), "server address", 2048);
+    text(connection["username"].asString(), "username", 1024, true);
+    if (!ids.insert(id).second) throw std::runtime_error("Duplicate saved identifier");
+    auto parent = connection["folderId"].asString();
+    if (!parent.empty() && !parents.count(parent)) throw std::runtime_error("Computer folder does not exist");
+    if (!connection["password"].isNull() && !connection["password"].isObject())
+      throw std::runtime_error("Invalid saved password record");
+  }
+}
+}
+
+Json::Value ConnectionStore::read() const {
+  auto document = file.read();
+  validate(document);
+  return document;
+}
+void ConnectionStore::setExpanded(bool expanded) {
+  auto document = read();
+  document["manager"]["expanded"] = expanded;
+  file.write(document);
+}
+std::string ConnectionStore::saveFolder(const std::string& id, const std::string& name,
+                                        const std::string& parent) {
+  auto document = read();
+  int index = id.empty() ? -1 : indexOf(document["folders"], id);
+  if (!id.empty() && index < 0) throw std::runtime_error("Folder no longer exists");
+  Json::Value folder = index < 0 ? Json::Value(Json::objectValue) : document["folders"][index];
+  std::string result = id.empty() ? CredentialVault::newId() : id;
+  folder["id"] = result; folder["name"] = trim(name); folder["parentId"] = parent;
+  if (index < 0) document["folders"].append(folder); else document["folders"][index] = folder;
+  validate(document);
+  file.write(document);
+  return result;
+}
+std::string ConnectionStore::saveConnection(const std::string& id, const std::string& name,
+  const std::string& address, const std::string& username, const std::string& folder,
+  PasswordChange change, const std::string& password) {
+  auto document = read();
+  int index = id.empty() ? -1 : indexOf(document["connections"], id);
+  if (!id.empty() && index < 0) throw std::runtime_error("Computer entry no longer exists");
+  Json::Value entry = index < 0 ? Json::Value(Json::objectValue) : document["connections"][index];
+  std::string result = id.empty() ? CredentialVault::newId() : id;
+  entry["id"] = result; entry["name"] = trim(name); entry["address"] = trim(address);
+  entry["username"] = username; entry["folderId"] = folder;
+  std::string host; int port;
+  network::getHostAndPort(entry["address"].asString().c_str(), &host, &port);
+  if (host.empty() || port < 1 || port > 65535) throw std::runtime_error("Invalid server address or port");
+  // Validate metadata before generating or changing any credential key.
+  if (index < 0) document["connections"].append(entry); else document["connections"][index] = entry;
+  validate(document);
+  auto position = index < 0 ? document["connections"].size() - 1 : Json::ArrayIndex(index);
+  if (change == SetPassword)
+    document["connections"][position]["password"] = CredentialVault::encrypt(document, result, password);
+  else if (change == ForgetPassword)
+    document["connections"][position].removeMember("password");
+  file.write(document);
+  return result;
+}
+void ConnectionStore::remove(const std::string& id, bool folder) {
+  auto document = read();
+  auto collection = folder ? "folders" : "connections";
+  int index = indexOf(document[collection], id);
+  if (index < 0) throw std::runtime_error("Entry no longer exists");
+  if (folder) {
+    for (const auto& child : document["folders"])
+      if (child["parentId"].asString() == id) throw std::runtime_error("Move or delete the contents of this folder first");
+    for (const auto& child : document["connections"])
+      if (child["folderId"].asString() == id) throw std::runtime_error("Move or delete the contents of this folder first");
+  }
+  document[collection].removeIndex(Json::ArrayIndex(index), nullptr);
+  file.write(document);
+}
+Json::Value ConnectionStore::connection(const std::string& id) const {
+  auto document = read();
+  int index = indexOf(document["connections"], id);
+  if (index < 0) throw std::runtime_error("Computer entry no longer exists");
+  return document["connections"][index];
+}
+std::string ConnectionStore::folderPath(const Json::Value& document, const std::string& id) {
+  std::string result, current = id;
+  std::set<std::string> seen;
+  while (!current.empty()) {
+    if (!seen.insert(current).second) throw std::runtime_error("Invalid folder hierarchy");
+    int index = indexOf(document["folders"], current);
+    if (index < 0) throw std::runtime_error("Folder no longer exists");
+    auto folder = document["folders"][index];
+    result = folder["name"].asString() + (result.empty() ? "" : " / " + result);
+    current = folder["parentId"].asString();
+  }
+  return result;
+}
+bool ConnectionStore::sameEndpoint(const std::string& address, const std::string& host, int port) {
+  std::string expected; int expectedPort;
+  try { network::getHostAndPort(address.c_str(), &expected, &expectedPort); }
+  catch (...) { return false; }
+  auto lower = [](std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    return value;
+  };
+  return expectedPort == port && lower(expected) == lower(host);
+}
+void ConnectionStore::activate(const std::string& id, const std::string& address) {
+  clearActive(); activeId = id; activeAddress = address; activePath = PortableConfig::executablePath();
+}
+void ConnectionStore::clearActive() { activeId.clear(); activeAddress.clear(); activePath.clear(); activePasswordAllowed = true; }
+void ConnectionStore::rejectActivePassword() { activePasswordAllowed = false; }
+bool ConnectionStore::prepareConnection(const std::string& id, const std::string& address,
+                                         ConnectionCredentials& result) const {
+  clearActive();
+  CredentialVault::erase(result.password); result.username.clear(); result.hasPassword = false;
+  if (id.empty()) return false;
+  auto entry = connection(id);
+  std::string host; int port;
+  network::getHostAndPort(address.c_str(), &host, &port);
+  if (!sameEndpoint(entry["address"].asString(), host, port)) return false;
+  activeId = id; activeAddress = address; activePath = path;
+  try { return activeCredentials(host, port, result); }
+  catch (...) { clearActive(); throw; }
+}
+bool ConnectionStore::activeCredentials(const std::string& host, int port, ConnectionCredentials& result) {
+  CredentialVault::erase(result.password); result.username.clear(); result.hasPassword = false;
+  if (activeId.empty() || !sameEndpoint(activeAddress, host, port)) return false;
+  ConnectionStore store(activePath);
+  auto document = store.read();
+  int index = indexOf(document["connections"], activeId);
+  if (index < 0) return false;
+  const auto& entry = document["connections"][index];
+  if (!sameEndpoint(entry["address"].asString(), host, port)) return false;
+  result.username = entry["username"].asString();
+  result.hasPassword = activePasswordAllowed && !entry["password"].isNull();
+  if (result.hasPassword)
+    result.password = CredentialVault::decrypt(document, activeId, entry["password"]);
+  return true;
+}

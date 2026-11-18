@@ -468,6 +468,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 find_package(GTest)
+find_package(jsoncpp CONFIG REQUIRED)
 
 # Generate config.h and make sure the source finds it
 configure_file(config.h.in config.h)
