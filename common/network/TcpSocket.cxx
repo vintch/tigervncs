@@ -40,6 +40,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <chrono>
+#include <memory>
+#ifdef WIN32
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#else
+#include <fcntl.h>
+#endif
 
 #include <core/Configuration.h>
 #include <core/Exception.h>
@@ -213,10 +222,11 @@ TcpSocket::TcpSocket(int sock) : Socket(sock)
   enableNagles(false);
 }
 
-TcpSocket::TcpSocket(const char *host, int port)
+TcpSocket::TcpSocket(const char *host, int port, int timeoutMs)
 {
   int sock, err, result;
   struct addrinfo *ai, *current, hints;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
 
   // - Create a socket
 
@@ -227,7 +237,39 @@ TcpSocket::TcpSocket(const char *host, int port)
   hints.ai_addr = nullptr;
   hints.ai_next = nullptr;
 
-  if ((result = getaddrinfo(host, nullptr, &hints, &ai)) != 0) {
+  // Bound DNS too. A late resolver owns and frees its result independently;
+  // no worker ever accesses the socket or the viewer after a timeout.
+#ifdef WIN32
+  if (timeoutMs > 0) {
+    struct Resolution {
+      std::mutex mutex;
+      std::condition_variable ready;
+      addrinfo* addresses = nullptr;
+      int result = 0;
+      bool done = false;
+      ~Resolution() { if (addresses) freeaddrinfo(addresses); }
+    };
+    auto resolution = std::make_shared<Resolution>();
+    std::string hostname(host);
+    std::thread([resolution, hostname, hints] {
+      addrinfo* addresses = nullptr;
+      int status = getaddrinfo(hostname.c_str(), nullptr, &hints, &addresses);
+      std::lock_guard<std::mutex> guard(resolution->mutex);
+      resolution->addresses = addresses;
+      resolution->result = status;
+      resolution->done = true;
+      resolution->ready.notify_one();
+    }).detach();
+    std::unique_lock<std::mutex> lock(resolution->mutex);
+    if (!resolution->ready.wait_until(lock, deadline, [&] { return resolution->done; }))
+      throw std::runtime_error(_("Connection timed out"));
+    result = resolution->result;
+    ai = resolution->addresses;
+    resolution->addresses = nullptr;
+  } else
+#endif
+    result = getaddrinfo(host, nullptr, &hints, &ai);
+  if (result != 0) {
     throw core::getaddrinfo_error(_("Failed get address for hostname"),
                                   result);
   }
@@ -239,6 +281,10 @@ TcpSocket::TcpSocket(const char *host, int port)
     vnc_sockaddr_t sa;
     socklen_t salen;
     char ntop[NI_MAXHOST];
+    if (timeoutMs > 0 && std::chrono::steady_clock::now() >= deadline) {
+      freeaddrinfo(ai);
+      throw std::runtime_error(_("Connection timed out"));
+    }
 
     family = current->ai_family;
 
@@ -273,9 +319,40 @@ TcpSocket::TcpSocket(const char *host, int port)
       throw core::socket_error(_("Failed to create socket"), err);
     }
 
+    if (timeoutMs > 0) {
+#ifdef WIN32
+      u_long nonblocking = 1;
+      result = ioctlsocket(sock, FIONBIO, &nonblocking);
+#else
+      result = fcntl(sock, F_SETFL, O_NONBLOCK);
+#endif
+      if (result < 0) {
+        err = errorNumber; closesocket(sock); freeaddrinfo(ai);
+        throw core::socket_error(_("Failed to configure socket"), err);
+      }
+    }
   /* Attempt to connect to the remote host */
     while ((result = connect(sock, &sa.u.sa, salen)) == -1) {
       err = errorNumber;
+      if (timeoutMs > 0 && (err == EINPROGRESS || err == EWOULDBLOCK)) {
+        while (true) {
+          auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - std::chrono::steady_clock::now()).count();
+          if (remaining <= 0) { err = ETIMEDOUT; break; }
+          timeval wait{long(remaining / 1000000), long(remaining % 1000000)};
+          fd_set writable, failed;
+          FD_ZERO(&writable); FD_ZERO(&failed);
+          FD_SET(sock, &writable); FD_SET(sock, &failed);
+          int ready = select(sock + 1, nullptr, &writable, &failed, &wait);
+          if (ready < 0 && errorNumber == EINTR) continue;
+          if (ready == 0) { err = ETIMEDOUT; break; }
+          if (ready < 0) { err = errorNumber; break; }
+          socklen_t errorSize = sizeof(err);
+          if (getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&err, &errorSize) < 0) err = errorNumber;
+          if (err == 0) result = 0;
+          break;
+        }
+        if (result == 0) break;
+      }
 #ifndef WIN32
       if (err == EINTR)
         continue;
@@ -302,6 +379,18 @@ TcpSocket::TcpSocket(const char *host, int port)
   }
 
   // Take proper ownership of the socket
+  if (timeoutMs > 0) {
+#ifdef WIN32
+    u_long nonblocking = 0;
+    result = ioctlsocket(sock, FIONBIO, &nonblocking);
+#else
+    result = fcntl(sock, F_SETFL, 0);
+#endif
+    if (result < 0) {
+      err = errorNumber; closesocket(sock);
+      throw core::socket_error(_("Failed to configure socket"), err);
+    }
+  }
   setFd(sock);
 
   // Disable Nagle's algorithm, to reduce latency

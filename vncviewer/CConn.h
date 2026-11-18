@@ -38,6 +38,7 @@ public:
   ~CConn();
 
   void connect(const char* vncServerName, network::Socket* sock=nullptr);
+  static void clearSavedCredentials();
 
   std::string connectionInfo();
 
@@ -51,6 +52,7 @@ protected:
   static void socketEvent(FL_SOCKET fd, void *data);
 
   void processNextMsg(core::Timer*);
+  void connectionTimedOut(core::Timer*);
 
   // CConnection callback methods
 
@@ -107,6 +109,7 @@ private:
   int serverPort;
   network::Socket* sock;
   core::MethodTimer<CConn> msgTimer;
+  core::MethodTimer<CConn> connectionTimer;
 
   DesktopWindow *desktop;
 

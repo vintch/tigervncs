@@ -43,6 +43,7 @@ protected:
 
 public:
   static void showDialog(void);
+  static void hideDialogs();
   static void setServerProfile(bool apple, int encoding);
 
   static void addCallback(OptionsCallback *cb, void *data = nullptr);

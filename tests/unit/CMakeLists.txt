@@ -33,7 +33,7 @@ if(WIN32)
   target_include_directories(connection_fixture SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
   target_link_libraries(connection_fixture PRIVATE network core jsoncpp_static
     ${FLTK_LIBRARIES} bcrypt crypt32)
-  add_executable(connectionstore connectionstore.cxx ../../vncviewer/ConnectionStore.cxx
+  add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx ../../vncviewer/ConnectionStore.cxx
     ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx
     ../../vncviewer/ConnectionTree.cxx)
   target_include_directories(connectionstore SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})

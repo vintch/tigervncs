@@ -27,3 +27,12 @@ covered by the automated store tests.
 The stub is compiled only into the explicit test target. Production
 `dist/vncviewer.exe` uses the normal VNC connection path. Do not distribute the
 test executable or include test credentials/configurations in Git.
+
+For connection recovery, explicitly build `vncviewer_lifecycle_test` and run
+`python tests/integration/session_lifecycle.py <path-to-test-exe>`. This uses
+real viewer sockets and handshake processing against loopback-only fake RFB
+servers. Only error-dialog decisions and the final return-to-main-window are
+stubbed. It verifies refused connections, early server drops, two four-second
+handshake timeouts with Retry, and an established session lasting beyond four
+seconds before dropping. No real VNC computers are contacted. JSON event logs
+and the aggregate result are saved under `build/`.

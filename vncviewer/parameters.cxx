@@ -91,9 +91,9 @@ core::BoolParameter
 
 core::BoolParameter
   reconnectOnError("ReconnectOnError",
-                   _("Show an error dialog on connection problems, "
-                     "rather than exiting immediately, and allow the "
-                     "user to reconnect"),
+                   _("Legacy credential caching setting. Connection errors "
+                     "always offer Retry and Cancel; sessions return to "
+                     "the initial window when disconnected"),
                    true);
 
 core::StringParameter

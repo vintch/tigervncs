@@ -152,6 +152,11 @@ void OptionsDialog::showDialog(void)
 }
 
 
+void OptionsDialog::hideDialogs()
+{
+  for (auto* dialog : instances) dialog->hide();
+}
+
 void OptionsDialog::addCallback(OptionsCallback *cb, void *data)
 {
   callbacks[cb] = data;
@@ -1313,7 +1318,8 @@ void OptionsDialog::createMiscPage(int tx, int ty, int tw, int th)
   reconnectCheckbox = new Fl_Check_Button(LBLRIGHT(tx, ty,
                                                   CHECK_MIN_WIDTH,
                                                   CHECK_HEIGHT,
-                                                  _("Ask to reconnect on connection errors")));
+                                                  _("Allow remembering credentials for Retry")));
+  reconnectCheckbox->tooltip(_("Credentials are cleared when returning to the initial window."));
   ty += CHECK_HEIGHT + TIGHT_MARGIN;
 
 #ifdef HAVE_AUDIO

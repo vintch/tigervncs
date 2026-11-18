@@ -65,6 +65,7 @@
 #include "AudioOutput.h"
 #include "AuthDialog.h"
 #include "ConnectionStore.h"
+#include "ConnectionTimeout.h"
 #include "CConn.h"
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
@@ -94,7 +95,8 @@ static const unsigned bpsEstimateWindow = 1000;
 
 CConn::CConn()
   : serverPort(0), sock(nullptr),
-    msgTimer(this, &CConn::processNextMsg), desktop(nullptr),
+    msgTimer(this, &CConn::processNextMsg),
+    connectionTimer(this, &CConn::connectionTimedOut), desktop(nullptr),
     audioOutput(nullptr),
     updateCount(0), pixelCount(0),
     lastServerEncoding((unsigned int)-1), bpsEstimate(20000000)
@@ -126,6 +128,8 @@ CConn::CConn()
 
 CConn::~CConn()
 {
+  connectionTimer.stop();
+  OptionsDialog::hideDialogs();
   OptionsDialog::setServerProfile(false, -1);
   close();
 
@@ -178,6 +182,7 @@ CConn::~CConn()
 
 void CConn::connect(const char* vncServerName, network::Socket* socket)
 {
+  connectionTimer.start(connectionTimeoutMs);
   sock = socket;
   if(sock == nullptr) {
     try {
@@ -191,7 +196,7 @@ void CConn::connect(const char* vncServerName, network::Socket* socket)
       {
         network::getHostAndPort(vncServerName, &serverHost, &serverPort);
 
-        sock = new network::TcpSocket(serverHost.c_str(), serverPort);
+        sock = new network::TcpSocket(serverHost.c_str(), serverPort, connectionTimeoutMs);
         vlog.info(_("Connected to host %s port %d"),
                   serverHost.c_str(), serverPort);
       }
@@ -320,8 +325,7 @@ void CConn::processNextMsg(core::Timer*)
     disconnect();
   } catch (rfb::auth_error& e) {
     ConnectionStore::rejectActivePassword();
-    savedUsername.clear();
-    savedPassword.clear();
+    clearSavedCredentials();
     vlog.error(_("Authentication failed: %s"), e.what());
     abort_connection(_("Failed to authenticate with the server. Reason "
                        "given by the server:\n\n%s"), e.what());
@@ -350,8 +354,20 @@ void CConn::processNextMsg(core::Timer*)
 
 ////////////////////// CConnection callback methods //////////////////////
 
+void CConn::clearSavedCredentials()
+{
+  savedUsername.clear();
+  CredentialVault::erase(savedPassword);
+}
+
+void CConn::connectionTimedOut(core::Timer*)
+{
+  abort_connection(_("The connection timed out after 4 seconds."));
+}
+
 void CConn::getUserPasswd(std::string *user, std::string *password)
 {
+  PauseConnectionTimeout pause(connectionTimer);
   const char *passwordFileName(passwordFile);
   int ret_val;
 
@@ -440,6 +456,7 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
 // server the pixel format and encodings to use and request the first update.
 void CConn::initDone()
 {
+  connectionTimer.stop();
   OptionsDialog::setServerProfile(isAppleServer(), -1);
   desktop = new DesktopWindow(server.width(), server.height(), this);
 
@@ -451,6 +468,7 @@ void CConn::initDone()
 bool CConn::verifyCertificate(unsigned int status,
                               const uint8_t* certificate, size_t length)
 {
+  PauseConnectionTimeout pause(connectionTimer);
 #ifndef HAVE_GNUTLS
   (void)status;
   (void)certificate;
@@ -791,6 +809,7 @@ bool CConn::verifyCertificate(unsigned int status,
 bool CConn::verifyHostKey(const uint8_t* key, size_t length,
                           const char* fingerprint)
 {
+  PauseConnectionTimeout pause(connectionTimer);
   std::string text = core::format(
     _("The server has provided the following identifying information:\n"
       "\n"

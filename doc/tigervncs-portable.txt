@@ -56,6 +56,20 @@ reported; the program never silently regenerates a missing or damaged key.
 Connection history also stays in this JSON; legacy registry history is read
 only as an initial fallback.
 
+Connection recovery
+-------------------
+Outgoing Windows connections have a four-second establishment deadline,
+including hostname lookup, TCP connection and the RFB handshake. Waiting for
+the user to enter credentials or approve a certificate pauses that deadline.
+It does not limit the duration of an established session or idle time.
+
+An unsuccessful attempt shows Retry and Cancel. Retry starts a fresh attempt
+at the same address. Cancel returns to the initial connection window. Closing
+the remote desktop, cancelling authentication or losing an established session
+also returns to that window. Session sockets, timers and credential bindings
+are discarded before returning. Only closing/cancelling the initial window
+ends the application. Legacy ReconnectOnError no longer disables recovery.
+
 Only the client-side image is scaled. This does not reduce the remote desktop's
 resolution or by itself reduce network traffic.
 

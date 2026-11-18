@@ -143,6 +143,11 @@ std::string ServerDialog::run(const char* servername)
 {
   ServerDialog dialog;
   ConnectionStore::clearActive();
+#ifdef TIGERVNCS_SESSION_TEST
+  extern void returnedToMainWindowStub();
+  returnedToMainWindowStub();
+  return "";
+#endif
 
   dialog.serverName->value(servername);
 

@@ -57,7 +57,8 @@ namespace network {
   class TcpSocket : public Socket {
   public:
     TcpSocket(int sock);
-    TcpSocket(const char *name, int port);
+    // Zero preserves the operating system timeout for other callers.
+    TcpSocket(const char *name, int port, int timeoutMs = 0);
 
     const char* getPeerAddress() override;
     const char* getPeerEndpoint() override;

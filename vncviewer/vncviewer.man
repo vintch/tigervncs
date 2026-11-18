@@ -298,9 +298,10 @@ JPEG quality level. 0 = Low, 9 = High. May be adjusted automatically if
 .
 .TP
 .B \-ReconnectOnError
-Display a dialog with any error and offer the possibility to retry
-establishing the connection. In case this is off no dialog to
-re-connect will be offered. Default is on.
+Legacy setting controlling credential caching during reconnection. Connection
+failures always offer Retry and Cancel; Cancel returns to the initial window.
+Established sessions return to that window when disconnected. Outgoing Windows
+connections have a four-second establishment timeout, paused for user input.
 .
 .TP
 .B \-ScaleToWindow

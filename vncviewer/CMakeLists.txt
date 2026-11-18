@@ -116,6 +116,11 @@ if(WIN32)
   target_include_directories(vncviewer_manager_test PRIVATE ${manager_test_includes})
   target_compile_definitions(vncviewer_manager_test PRIVATE TIGERVNCS_CONNECTION_STUB)
   target_link_libraries(vncviewer_manager_test PRIVATE ${manager_test_links})
+  add_executable(vncviewer_lifecycle_test EXCLUDE_FROM_ALL ${manager_test_sources}
+    ../tests/integration/session_stub.cxx)
+  target_include_directories(vncviewer_lifecycle_test PRIVATE ${manager_test_includes})
+  target_compile_definitions(vncviewer_lifecycle_test PRIVATE TIGERVNCS_SESSION_TEST)
+  target_link_libraries(vncviewer_lifecycle_test PRIVATE ${manager_test_links})
 endif()
 
 install(TARGETS vncviewer DESTINATION ${CMAKE_INSTALL_FULL_BINDIR})

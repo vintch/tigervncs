@@ -163,12 +163,18 @@ void about_vncviewer()
 static void mainloop(const char* vncserver, network::Socket* sock)
 {
   while (true) {
-    CConn *cc;
+    CConn *cc = nullptr;
 
     exitMainloop = false;
+    exitError.clear();
+    fatalError = false;
 
-    cc = new CConn();
-    cc->connect(vncserver, sock);
+    try {
+      cc = new CConn();
+      cc->connect(vncserver, sock);
+    } catch (std::exception& e) {
+      abort_connection_unexpected(e);
+    }
 
     while (!exitMainloop) {
       int next_timer;
@@ -178,39 +184,35 @@ static void mainloop(const char* vncserver, network::Socket* sock)
         next_timer = INT_MAX;
 
       if (Fl::wait((double)next_timer / 1000.0) < 0.0) {
-        vlog.error(_("Internal FLTK error. Exiting."));
-        exit(-1);
+        abort_connection(_("The window event loop failed."));
+        break;
       }
     }
 
+    bool established = cc && cc->state() == rfb::CConnection::RFBSTATE_NORMAL;
     delete cc;
 
-    if (fatalError) {
-      assert(!exitError.empty());
-      if (alertOnFatalError)
-        fl_alert("%s", exitError.c_str());
+    if (established) {
+      // A finished session returns directly to the connection manager.
+      if (!exitError.empty()) vlog.info("%s", exitError.c_str());
+      exitError.clear();
       break;
     }
 
     if (exitError.empty())
       break;
 
-    if(reconnectOnError && (sock == nullptr)) {
-      int ret;
-      ret = fl_choice(_("%s\n\n"
-                        "Attempt to reconnect?"),
-                      nullptr, _("Reconnect"), fl_close,
-                      exitError.c_str());
-      exitError.clear();
-      if (ret == 1)
-        continue;
-      else
-        break;
-    }
-
-    if (alertOnFatalError)
-      fl_alert("%s", exitError.c_str());
-
+#ifdef TIGERVNCS_SESSION_TEST
+    extern int connectionErrorStub(const std::string&);
+    int ret = connectionErrorStub(exitError);
+#else
+    int ret = fl_choice("%s", _("Cancel"), _("Retry"), nullptr, exitError.c_str());
+#endif
+    exitError.clear();
+    fatalError = false;
+    // An accepted reverse socket has been destroyed with CConn. Return to
+    // the server dialog rather than attempting to reuse that socket.
+    if (ret == 1 && sock == nullptr) continue;
     break;
   }
 }
@@ -754,9 +756,20 @@ int main(int argc, char** argv)
   extern int runConnectionStub(const std::string&);
   return runConnectionStub(vncServerName);
 #endif
-  inMainloop = true;
-  mainloop(vncServerName.c_str(), sock);
-  inMainloop = false;
+  while (true) {
+    inMainloop = true;
+    mainloop(vncServerName.c_str(), sock);
+    inMainloop = false;
+    sock = nullptr;
+    exitMainloop = false;
+    exitError.clear();
+    fatalError = false;
+    // End the session, not the application. Discard its credential binding
+    // and construct the same initial dialog used on a fresh launch.
+    CConn::clearSavedCredentials();
+    vncServerName = ServerDialog::run(defaultServerName.c_str());
+    if (vncServerName.empty()) break;
+  }
 
   return 0;
 }

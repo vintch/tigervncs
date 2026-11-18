@@ -143,7 +143,8 @@ try {
         features = @('Apple DH authentication', 'TLS', 'RSA-AES', 'H.264', 'audio',
             'Scale desktop to window', 'Portable JSON settings',
             'macOS RGB565 compatibility', 'Connection manager with nested folders',
-            'AES-256-GCM passwords with Windows account protected key')
+            'AES-256-GCM passwords with Windows account protected key',
+            'Four-second connection deadline and return to connection manager')
         bytes = (Get-Item -LiteralPath $outputExe).Length
         sha256 = (Get-FileHash -LiteralPath $outputExe -Algorithm SHA256).Hash
         systemDlls = $dllNames
