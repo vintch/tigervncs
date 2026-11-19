@@ -27,13 +27,17 @@ target_link_libraries(portableconfig PRIVATE core GTest::gtest_main jsoncpp_stat
 gtest_discover_tests(portableconfig)
 
 if(WIN32)
+  add_executable(presence_probe EXCLUDE_FROM_ALL ../integration/presence_probe.cxx
+    ../../vncviewer/PresenceMonitor.cxx ../../vncviewer/PresencePing.cxx)
+  target_link_libraries(presence_probe PRIVATE network core jsoncpp_static iphlpapi)
   add_executable(connection_fixture EXCLUDE_FROM_ALL ../integration/connection_fixture.cxx
     ../../vncviewer/ConnectionStore.cxx ../../vncviewer/CredentialVault.cxx
     ../../vncviewer/PortableConfig.cxx)
   target_include_directories(connection_fixture SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
   target_link_libraries(connection_fixture PRIVATE network core jsoncpp_static
     ${FLTK_LIBRARIES} bcrypt crypt32)
-  add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx ../../vncviewer/ConnectionStore.cxx
+  add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx presence.cxx
+    ../../vncviewer/PresenceMonitor.cxx ../../vncviewer/ConnectionStore.cxx
     ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx
     ../../vncviewer/ConnectionTree.cxx)
   target_include_directories(connectionstore SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})

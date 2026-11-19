@@ -3,6 +3,7 @@
 #define TIGERVNCS_CONNECTION_STORE_H
 #include "PortableConfig.h"
 #include "CredentialVault.h"
+#include <vector>
 
 struct ConnectionCredentials {
   std::string username, password;
@@ -16,6 +17,10 @@ public:
   explicit ConnectionStore(const std::string& filename = PortableConfig::executablePath()) : file(filename), path(filename) {}
   Json::Value read() const;
   void setExpanded(bool expanded);
+  void setFolderExpanded(const std::string& id, bool expanded);
+  bool move(const std::string& id, bool folder, int direction);
+  static std::vector<std::string> children(const Json::Value& document, const std::string& parent);
+  static bool canMove(const Json::Value& document, const std::string& id, bool folder, int direction);
   std::string saveFolder(const std::string& id, const std::string& name, const std::string& parent);
   std::string saveConnection(const std::string& id, const std::string& name,
     const std::string& address, const std::string& username, const std::string& folder,

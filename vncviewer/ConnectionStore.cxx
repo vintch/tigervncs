@@ -37,6 +37,15 @@ void validate(Json::Value& document) {
   if (!document["manager"].isObject()) throw std::runtime_error("Invalid manager settings");
   if (!document["manager"]["expanded"].isNull() && !document["manager"]["expanded"].isBool())
     throw std::runtime_error("Invalid manager expansion state");
+  if (!document["manager"]["order"].isNull()) {
+    const auto& order = document["manager"]["order"];
+    if (!order.isObject()) throw std::runtime_error("Invalid sibling order");
+    for (const auto& key : order.getMemberNames()) {
+      if (!order[key].isArray() || order[key].size() > 20000) throw std::runtime_error("Invalid sibling order");
+      for (const auto& id : order[key])
+        if (!id.isString()) throw std::runtime_error("Invalid sibling identifier");
+    }
+  }
   std::set<std::string> ids;
   std::map<std::string, std::string> parents;
   for (const auto& folder : document["folders"]) {
@@ -45,6 +54,8 @@ void validate(Json::Value& document) {
     auto id = folder["id"].asString();
     text(id, "folder identifier", 64);
     text(folder["name"].asString(), "folder name", 256);
+    if (!folder["expanded"].isNull() && !folder["expanded"].isBool())
+      throw std::runtime_error("Invalid folder expansion state");
     if (!ids.insert(id).second) throw std::runtime_error("Duplicate saved identifier");
     parents[id] = folder["parentId"].asString();
   }
@@ -87,16 +98,65 @@ void ConnectionStore::setExpanded(bool expanded) {
   document["manager"]["expanded"] = expanded;
   file.write(document);
 }
+void ConnectionStore::setFolderExpanded(const std::string& id, bool expanded) {
+  auto document = read();
+  int index = indexOf(document["folders"], id);
+  if (index < 0) throw std::runtime_error("Folder no longer exists");
+  document["folders"][index]["expanded"] = expanded;
+  file.write(document);
+}
+std::vector<std::string> ConnectionStore::children(const Json::Value& document, const std::string& parent) {
+  std::vector<std::string> fallback, result;
+  std::set<std::string> remaining;
+  for (const auto& folder : document["folders"])
+    if (folder["parentId"].asString() == parent) fallback.push_back(folder["id"].asString());
+  for (const auto& computer : document["connections"])
+    if (computer["folderId"].asString() == parent) fallback.push_back(computer["id"].asString());
+  remaining.insert(fallback.begin(), fallback.end());
+  for (const auto& id : document["manager"]["order"][parent])
+    if (remaining.erase(id.asString())) result.push_back(id.asString());
+  for (const auto& id : fallback) if (remaining.erase(id)) result.push_back(id);
+  return result;
+}
+bool ConnectionStore::canMove(const Json::Value& document, const std::string& id, bool folder, int direction) {
+  if (direction != -1 && direction != 1) return false;
+  auto collection = folder ? "folders" : "connections";
+  int index = indexOf(document[collection], id);
+  if (index < 0) return false;
+  auto siblings = children(document, document[collection][index][folder ? "parentId" : "folderId"].asString());
+  auto position = std::find(siblings.begin(), siblings.end(), id);
+  if (position == siblings.end()) return false;
+  return direction < 0 ? position != siblings.begin() : position + 1 != siblings.end();
+}
+bool ConnectionStore::move(const std::string& id, bool folder, int direction) {
+  auto document = read();
+  if (!canMove(document, id, folder, direction)) return false;
+  auto collection = folder ? "folders" : "connections";
+  auto parent = document[collection][indexOf(document[collection], id)][folder ? "parentId" : "folderId"].asString();
+  auto siblings = children(document, parent);
+  auto position = std::find(siblings.begin(), siblings.end(), id);
+  std::iter_swap(position, position + direction);
+  document["manager"]["order"][parent] = Json::Value(Json::arrayValue);
+  for (const auto& sibling : siblings) document["manager"]["order"][parent].append(sibling);
+  file.write(document);
+  return true;
+}
 std::string ConnectionStore::saveFolder(const std::string& id, const std::string& name,
                                         const std::string& parent) {
   auto document = read();
   int index = id.empty() ? -1 : indexOf(document["folders"], id);
+  auto siblings = children(document, parent);
   if (!id.empty() && index < 0) throw std::runtime_error("Folder no longer exists");
   Json::Value folder = index < 0 ? Json::Value(Json::objectValue) : document["folders"][index];
   std::string result = id.empty() ? CredentialVault::newId() : id;
   folder["id"] = result; folder["name"] = trim(name); folder["parentId"] = parent;
   if (index < 0) document["folders"].append(folder); else document["folders"][index] = folder;
   validate(document);
+  if (std::find(siblings.begin(), siblings.end(), result) == siblings.end()) {
+    siblings.push_back(result);
+    document["manager"]["order"][parent] = Json::Value(Json::arrayValue);
+    for (const auto& sibling : siblings) document["manager"]["order"][parent].append(sibling);
+  }
   file.write(document);
   return result;
 }
@@ -105,6 +165,7 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
   PasswordChange change, const std::string& password) {
   auto document = read();
   int index = id.empty() ? -1 : indexOf(document["connections"], id);
+  auto siblings = children(document, folder);
   if (!id.empty() && index < 0) throw std::runtime_error("Computer entry no longer exists");
   Json::Value entry = index < 0 ? Json::Value(Json::objectValue) : document["connections"][index];
   std::string result = id.empty() ? CredentialVault::newId() : id;
@@ -116,6 +177,11 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
   // Validate metadata before generating or changing any credential key.
   if (index < 0) document["connections"].append(entry); else document["connections"][index] = entry;
   validate(document);
+  if (std::find(siblings.begin(), siblings.end(), result) == siblings.end()) {
+    siblings.push_back(result);
+    document["manager"]["order"][folder] = Json::Value(Json::arrayValue);
+    for (const auto& sibling : siblings) document["manager"]["order"][folder].append(sibling);
+  }
   auto position = index < 0 ? document["connections"].size() - 1 : Json::ArrayIndex(index);
   if (change == SetPassword)
     document["connections"][position]["password"] = CredentialVault::encrypt(document, result, password);
@@ -136,6 +202,12 @@ void ConnectionStore::remove(const std::string& id, bool folder) {
       if (child["folderId"].asString() == id) throw std::runtime_error("Move or delete the contents of this folder first");
   }
   document[collection].removeIndex(Json::ArrayIndex(index), nullptr);
+  if (folder) document["manager"]["order"].removeMember(id);
+  for (const auto& parent : document["manager"]["order"].getMemberNames()) {
+    auto siblings = children(document, parent);
+    document["manager"]["order"][parent] = Json::Value(Json::arrayValue);
+    for (const auto& sibling : siblings) document["manager"]["order"][parent].append(sibling);
+  }
   file.write(document);
 }
 Json::Value ConnectionStore::connection(const std::string& id) const {

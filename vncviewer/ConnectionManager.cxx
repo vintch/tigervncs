@@ -9,6 +9,7 @@
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Button.H>
 #include <FL/Fl_Check_Button.H>
+#include <FL/Fl_Menu_Item.H>
 #include <FL/fl_ask.H>
 #include <algorithm>
 #include <functional>
@@ -18,8 +19,13 @@ namespace {
 // clicked again. Explicitly notify for double-clicks, including that case.
 class ComputerTree : public Fl_Tree {
 public:
+  std::function<void(Fl_Tree_Item*)> contextMenu;
   ComputerTree(int x, int y, int w, int h) : Fl_Tree(x, y, w, h) {}
   int handle(int event) override {
+    if (event == FL_PUSH && Fl::event_button() == FL_RIGHT_MOUSE) {
+      if (contextMenu) contextMenu(find_clicked());
+      return 1;
+    }
     int result = Fl_Tree::handle(event);
     if (event == FL_RELEASE && Fl::event_button() == FL_LEFT_MOUSE && Fl::event_clicks()) {
       auto item = find_clicked();
@@ -35,14 +41,9 @@ public:
 void ServerDialog::createManager(int top)
 {
   managerPane = new Fl_Group(0, top, w(), collapsedHeight * 3);
-  const char* actions[] = {"New computer", "New folder", "Edit", "Delete"};
-  for (int pos = 0; pos < 4; ++pos) {
-    auto b = new Fl_Button(15 + pos * 108, top + 8, 102, 27, actions[pos]);
-    b->callback(managerAction, this);
-    if (pos == 2) editButton = b;
-    if (pos == 3) deleteButton = b;
-  }
-  tree = new ComputerTree(15, top + 43, w() - 30, managerPane->h() - 58);
+  auto computerTree = new ComputerTree(15, top + 8, w() - 30, managerPane->h() - 23);
+  computerTree->contextMenu = [this](Fl_Tree_Item* item) { showContextMenu(item); };
+  tree = computerTree;
   tree->showroot(0);
   tree->selectmode(FL_TREE_SELECT_SINGLE);
   tree->connectorstyle(FL_TREE_CONNECTOR_NONE);
@@ -63,6 +64,9 @@ void ServerDialog::createManager(int top)
   editor->hide();
   managerPane->end();
   managerPane->hide();
+  tree->tooltip("Right-click to create, edit or move an entry.");
+  presence.reset(new PresenceMonitor(createPingTransport()));
+  Fl::add_timeout(0.1, presenceTick, this);
   end();
 }
 
@@ -72,28 +76,31 @@ void ServerDialog::expandManager(bool value)
   managerButton->value(value);
   if (value) managerPane->show(); else { closeEditor(); managerPane->hide(); }
   size(w(), collapsedHeight * (value ? 4 : 1));
+  updatePresence();
   redraw();
 }
 
 void ServerDialog::refreshManager(const std::string& selected)
 {
   managerData = store.read();
+  connectionAddresses.clear();
+  for (const auto& computer : managerData["connections"])
+    connectionAddresses[computer["id"].asString()] = computer["address"].asString();
   rebuilding = true;
   populateConnectionTree(*tree, managerData, treeEntries);
   selectedId.clear(); selectedComputer.clear();
-  editButton->deactivate(); deleteButton->deactivate();
   for (auto item = tree->first(); item; item = tree->next(item)) {
     auto entry = static_cast<ConnectionTreeEntry*>(item->user_data());
     if (!entry || entry->id != selected) continue;
     tree->select(item, 0);
     selectedId = entry->id; selectedFolder = entry->folder;
-    editButton->activate(); deleteButton->activate();
     if (!entry->folder) {
       selectedComputer = entry->id;
       serverName->value(store.connection(entry->id)["address"].asCString());
     }
   }
   rebuilding = false;
+  updatePresence();
   tree->redraw();
 }
 
@@ -102,12 +109,23 @@ void ServerDialog::treeAction(Fl_Widget*, void* data)
   auto d = static_cast<ServerDialog*>(data);
   if (d->rebuilding) return;
   auto reason = d->tree->callback_reason();
+  if (reason == FL_TREE_REASON_OPENED || reason == FL_TREE_REASON_CLOSED) {
+    auto item = d->tree->callback_item();
+    auto entry = item ? static_cast<ConnectionTreeEntry*>(item->user_data()) : nullptr;
+    if (!entry || !entry->folder) return;
+    try {
+      d->store.setFolderExpanded(entry->id, item->is_open());
+      for (auto& folder : d->managerData["folders"])
+        if (folder["id"].asString() == entry->id) folder["expanded"] = bool(item->is_open());
+    } catch (std::exception& e) { fl_alert("Unable to save folder state:\n\n%s", e.what()); }
+    d->updatePresence();
+    return;
+  }
   if (reason != FL_TREE_REASON_SELECTED) return;
   auto item = d->tree->callback_item();
   auto entry = item ? static_cast<ConnectionTreeEntry*>(item->user_data()) : nullptr;
   if (!entry) return;
   d->selectedId = entry->id; d->selectedFolder = entry->folder;
-  d->editButton->activate(); d->deleteButton->activate();
   if (!entry->folder) {
     d->selectedComputer = entry->id;
     for (const auto& computer : d->managerData["connections"])
@@ -122,7 +140,7 @@ void ServerDialog::closeEditor()
 {
   entryPassword->value("");
   editor->hide();
-  tree->size(tree->w(), managerPane->h() - 58);
+  tree->size(tree->w(), managerPane->h() - 23);
   redraw();
 }
 
@@ -184,15 +202,25 @@ void ServerDialog::editEntry(bool folder, bool existing)
 void ServerDialog::managerAction(Fl_Widget* widget, void* data)
 {
   auto d = static_cast<ServerDialog*>(data);
+  d->performManagerAction(widget == d->managerButton ? "Computers" : widget->label());
+}
+
+void ServerDialog::performManagerAction(const std::string& action)
+{
+  auto d = this;
   try {
-    std::string action = widget->label();
-    if (widget == d->managerButton) {
+    if (action == "Computers") {
       d->store.setExpanded(!d->expanded);
       d->expandManager(!d->expanded);
     } else if (action == "New computer") d->editEntry(false, false);
     else if (action == "New folder") d->editEntry(true, false);
     else if (action == "Edit" && !d->selectedId.empty()) d->editEntry(d->selectedFolder, true);
     else if (action == "Cancel edit") d->closeEditor();
+    else if ((action == "Move up" || action == "Move down") && !d->selectedId.empty()) {
+      auto selected = d->selectedId;
+      d->store.move(selected, d->selectedFolder, action == "Move up" ? -1 : 1);
+      d->closeEditor(); d->refreshManager(selected);
+    }
     else if (action == "Delete" && !d->selectedId.empty()) {
       if (fl_choice("Delete the selected entry?", "Cancel", "Delete", nullptr) != 1) return;
       d->store.remove(d->selectedId, d->selectedFolder);
@@ -218,4 +246,62 @@ void ServerDialog::managerAction(Fl_Widget* widget, void* data)
       d->closeEditor(); d->refreshManager(id);
     }
   } catch (std::exception& e) { fl_alert("Unable to update saved computers:\n\n%s", e.what()); }
+}
+
+void ServerDialog::showContextMenu(Fl_Tree_Item* item)
+{
+  auto entry = item ? static_cast<ConnectionTreeEntry*>(item->user_data()) : nullptr;
+  tree->deselect_all(0);
+  selectedId.clear(); selectedComputer.clear();
+  if (entry) {
+    tree->select(item, 0);
+    tree->callback_item(item); tree->callback_reason(FL_TREE_REASON_SELECTED);
+    treeAction(tree, this);
+  }
+  Fl_Menu_Item menu[] = {
+    {"New computer", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"New folder", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"Edit", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"Delete", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
+    {"Move up", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"Move down", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}
+  };
+  if (!entry) menu[2].label(nullptr);
+  else {
+    if (!ConnectionStore::canMove(managerData, selectedId, selectedFolder, -1)) menu[4].deactivate();
+    if (!ConnectionStore::canMove(managerData, selectedId, selectedFolder, 1)) menu[5].deactivate();
+  }
+  tree->redraw();
+  auto chosen = menu->popup(Fl::event_x(), Fl::event_y());
+  if (chosen) performManagerAction(chosen->label());
+}
+
+void ServerDialog::presenceTick(void* data)
+{
+  auto d = static_cast<ServerDialog*>(data);
+  d->updatePresence();
+  Fl::repeat_timeout(0.1, presenceTick, data);
+}
+
+void ServerDialog::updatePresence()
+{
+  auto d = this;
+  try {
+    std::vector<PingTarget> targets;
+    if (d->shown() && d->expanded) {
+      auto visible = visibleConnectionIds(*d->tree);
+      for (const auto& id : visible) {
+        auto address = d->connectionAddresses.find(id);
+        if (address != d->connectionAddresses.end()) targets.push_back({id, address->second});
+      }
+    }
+    d->presence->tick(pingClockMs(), targets);
+    bool changed = false;
+    for (auto item = d->tree->first(); item; item = d->tree->next(item)) {
+      auto entry = static_cast<ConnectionTreeEntry*>(item->user_data());
+      if (entry && !entry->folder) changed = setConnectionOnlineIcon(item, d->presence->online(entry->id)) || changed;
+    }
+    if (changed) d->tree->redraw();
+  } catch (...) { /* Network monitoring must never interrupt the dialog. */ }
 }

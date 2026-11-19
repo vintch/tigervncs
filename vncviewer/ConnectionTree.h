@@ -5,10 +5,13 @@
 #include <json/json.h>
 #include <list>
 #include <string>
+#include <vector>
 
 struct ConnectionTreeEntry { std::string id; bool folder; };
 // Rebuilds the actual UI tree, including its hidden root and per-item icons.
 // Entries own user_data pointers until the next rebuild.
 void populateConnectionTree(Fl_Tree& tree, const Json::Value& document,
                             std::list<ConnectionTreeEntry>& entries);
+bool setConnectionOnlineIcon(Fl_Tree_Item* item, bool online);
+std::vector<std::string> visibleConnectionIds(Fl_Tree& tree);
 #endif

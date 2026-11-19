@@ -36,3 +36,16 @@ stubbed. It verifies refused connections, early server drops, two four-second
 handshake timeouts with Retry, and an established session lasting beyond four
 seconds before dropping. No real VNC computers are contacted. JSON event logs
 and the aggregate result are saved under `build/`.
+
+Presence scheduling, hysteresis, cancellation and stale-result handling are
+tested with a deterministic fake transport in the unit suite. The store/tree
+tests cover mixed sibling order, both disabled boundaries and nested folder
+visibility after reload.
+
+For explicit ICMP checks, build `presence_probe`. Pass a UTF-8 JSON fixture
+containing `{"targets":[{"id":"a","address":"127.0.0.1"}]}`. It runs the
+production scheduler/Windows backend for 15 seconds and prints send/completion
+events plus final online states. Include only the intended test targets, with
+no credential fields. Verify at least 1000 ms between consecutive send events
+and at least 3000 ms between sends for each ID. Interactive context-menu tests
+should use a viewer/configuration copy under `build/` to preserve user data.

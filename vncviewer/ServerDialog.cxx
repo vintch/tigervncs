@@ -136,6 +136,8 @@ ServerDialog::ServerDialog()
 
 ServerDialog::~ServerDialog()
 {
+  Fl::remove_timeout(presenceTick, this);
+  presence.reset();
 }
 
 

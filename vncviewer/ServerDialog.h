@@ -25,6 +25,7 @@
 #include <vector>
 #include "ConnectionStore.h"
 #include "ConnectionTree.h"
+#include "PresenceMonitor.h"
 
 #include "fltk/Fl_Suggestion_Input.h"
 
@@ -60,6 +61,10 @@ private:
   void expandManager(bool expanded);
   void editEntry(bool folder, bool existing);
   void closeEditor();
+  void showContextMenu(Fl_Tree_Item* item);
+  void performManagerAction(const std::string& action);
+  static void presenceTick(void*);
+  void updatePresence();
   static void managerAction(Fl_Widget*, void*);
   static void treeAction(Fl_Widget*, void*);
   Fl_Group *managerPane, *editor;
@@ -67,9 +72,11 @@ private:
   Fl_Input *entryName, *entryAddress, *entryUser, *entryPassword;
   Fl_Choice* entryFolder;
   Fl_Check_Button* rememberPassword;
-  Fl_Button *managerButton, *editButton, *deleteButton;
+  Fl_Button *managerButton;
+  std::unique_ptr<PresenceMonitor> presence;
   ConnectionStore store;
   Json::Value managerData;
+  std::map<std::string, std::string> connectionAddresses;
   std::list<ConnectionTreeEntry> treeEntries;
   std::vector<std::string> folderIds;
   std::list<std::string> folderLabels;

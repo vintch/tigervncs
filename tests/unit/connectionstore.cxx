@@ -186,3 +186,57 @@ TEST_F(ConnectionStoreTest, ConnectStubReceivesSelectedAddressUsernameAndPasswor
   EXPECT_TRUE(credentials.password.empty());
   ConnectionStore::clearActive();
 }
+
+TEST_F(ConnectionStoreTest, MovesMixedSiblingsWithinParentAndRespectsBothBoundaries) {
+  ConnectionStore store(path);
+  auto parent = store.saveFolder("", "Parent", "");
+  auto first = store.saveConnection("", "First", "127.0.0.1", "test", parent,
+    ConnectionStore::SetPassword, "synthetic");
+  auto folder = store.saveFolder("", "Folder", parent);
+  auto last = store.saveConnection("", "Last", "127.0.0.2", "", parent,
+    ConnectionStore::ForgetPassword, "");
+  EXPECT_EQ(ConnectionStore::children(store.read(), parent), (std::vector<std::string>{first, folder, last}));
+  auto password = store.connection(first)["password"];
+  EXPECT_FALSE(ConnectionStore::canMove(store.read(), first, false, -1));
+  EXPECT_FALSE(ConnectionStore::canMove(store.read(), last, false, 1));
+  auto unchanged = store.read();
+  EXPECT_FALSE(store.move(first, false, -1));
+  EXPECT_FALSE(store.move(last, false, 1));
+  EXPECT_FALSE(store.move(last, false, 7));
+  EXPECT_EQ(unchanged, store.read());
+  EXPECT_TRUE(store.move(folder, true, -1));
+  EXPECT_EQ(ConnectionStore::children(ConnectionStore(path).read(), parent), (std::vector<std::string>{folder, first, last}));
+  EXPECT_TRUE(store.move(first, false, 1));
+  EXPECT_EQ(ConnectionStore::children(store.read(), parent), (std::vector<std::string>{folder, last, first}));
+  EXPECT_EQ(store.connection(first)["folderId"].asString(), parent);
+  EXPECT_EQ(store.connection(first)["password"], password);
+  Fl_Tree tree(0, 0, 400, 400); std::list<ConnectionTreeEntry> entries;
+  populateConnectionTree(tree, store.read(), entries);
+  auto item = tree.root()->child(0);
+  EXPECT_STREQ(item->child(0)->label(), "Folder");
+  EXPECT_STREQ(item->child(1)->label(), "Last");
+  EXPECT_STREQ(item->child(2)->label(), "First");
+  store.remove(last, false);
+  EXPECT_EQ(ConnectionStore::children(store.read(), parent), (std::vector<std::string>{folder, first}));
+}
+
+TEST_F(ConnectionStoreTest, FolderStatePersistsAndOnlyOpenAncestorsExposeComputers) {
+  ConnectionStore store(path);
+  auto parent = store.saveFolder("", "Parent", "");
+  auto sub = store.saveFolder("", "Sub", parent);
+  auto nested = store.saveConnection("", "Nested", "127.0.0.1", "", sub, ConnectionStore::ForgetPassword, "");
+  auto root = store.saveConnection("", "Root", "127.0.0.2", "", "", ConnectionStore::ForgetPassword, "");
+  Fl_Tree tree(0, 0, 400, 400); std::list<ConnectionTreeEntry> entries;
+  populateConnectionTree(tree, store.read(), entries);
+  EXPECT_EQ(visibleConnectionIds(tree), (std::vector<std::string>{nested, root}));
+  store.setFolderExpanded(parent, false);
+  populateConnectionTree(tree, ConnectionStore(path).read(), entries);
+  EXPECT_FALSE(tree.root()->child(0)->is_open());
+  EXPECT_EQ(visibleConnectionIds(tree), (std::vector<std::string>{root}));
+  store.setFolderExpanded(parent, true); store.setFolderExpanded(sub, false);
+  populateConnectionTree(tree, store.read(), entries);
+  EXPECT_EQ(visibleConnectionIds(tree), (std::vector<std::string>{root}));
+  store.setFolderExpanded(sub, true);
+  populateConnectionTree(tree, store.read(), entries);
+  EXPECT_EQ(visibleConnectionIds(tree), (std::vector<std::string>{nested, root}));
+}

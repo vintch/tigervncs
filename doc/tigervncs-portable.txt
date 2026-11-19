@@ -30,11 +30,35 @@ Connection manager
 ------------------
 The small ? button opens About. Computers toggles the lower connection tree
 and quadruples the connection window height. Its expanded state is saved in
-manager.expanded. New computer and New folder open an inline editor; Edit
+manager.expanded. Right-click an entry or empty list space for the context
+menu. New computer and New folder open an inline editor; Edit
 changes the selected entry, including its parent folder. Nested folders are
 supported. A nonempty folder must be emptied before deleting it. Selecting a
 computer fills the server field; double-clicking uses the Connect action.
 Manually replacing the address does not reuse another computer's credentials.
+
+Move up and Move down reorder an entry among siblings, including mixed folders
+and computers, without changing its parent. The unavailable boundary action is
+disabled. Sibling ID arrays are stored in manager.order, keyed by parent ID;
+older configurations keep their existing folders-first ordering until edited.
+The optional expanded boolean on each folder persists its open/closed state.
+
+Visible computers (all ancestor folders open, including top-level computers)
+are monitored while the connection list is expanded. One ICMP echo is sent per
+attempt. For N computers, the inter-packet interval is max(1 second, 3/N seconds)
+and each computer is checked no more often than every three seconds. Thus more
+than three computers have a longer polling cycle. All packets in this process
+share an additional rate limiter. A reply turns the icon green; two consecutive
+failures/timeouts turn it blue. One success resets the failure streak. Blue
+means no recent ICMP confirmation, not necessarily a VNC service failure.
+
+ICMP waits at most three seconds. DNS and ICMP execute away from the UI, with
+at most four workers process-wide. Closing a folder/list cancels unsent work;
+late results cannot update hidden, deleted or edited entries. No worker owns a
+window or tree pointer, and closing the dialog never joins network workers.
+Native operation buffers remain alive until Windows finishes the request.
+Reachability is transient and is never written to settings. No credentials
+are read or sent by monitoring, and no ping subprocess or raw socket is used.
 
 Folders are stored as {id,name,parentId}; computers use
 {id,name,address,username,folderId,password}. An empty parent/folder ID means
