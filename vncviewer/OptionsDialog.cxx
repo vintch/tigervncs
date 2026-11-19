@@ -45,6 +45,8 @@
 #include "VpnProfiles.h"
 #include "PowerTools.h"
 #include "ShellyPower.h"
+#include "RdpClient.h"
+#include "RdpDefaults.h"
 #include "PresenceMonitor.h"
 #include <FL/Fl_Spinner.H>
 #include "ShortcutHandler.h"
@@ -113,6 +115,7 @@ OptionsDialog::OptionsDialog()
     createNetworkPage(tx, ty, tw, th);
     createVpnPage(tx, ty, tw, th);
     createToolsPage(tx, ty, tw, th);
+    createRdpPage(tx, ty, tw, th);
   }
 
   navigation->end();
@@ -394,6 +397,8 @@ void OptionsDialog::loadOptions(void)
   pingMinimumSpinner->value(networkSettings::pingMinimum);
   pingEnabledCheckbox->value(networkSettings::pingEnabled);
   shellyDelaySpinner->value(shellyPower::delaySeconds);
+  rdpWidthSpinner->value(rdpClient::windowWidth);
+  rdpHeightSpinner->value(rdpClient::windowHeight);
   plinkPathInput->value(std::string(powerTools::plinkExecutable).c_str());
   openVpnLogInput->value(std::string(vpnProfiles::openVpnLog).c_str());
   openVpnPathInput->value(std::string(vpnProfiles::openVpnExecutable).c_str());
@@ -402,6 +407,7 @@ void OptionsDialog::loadOptions(void)
   audioCheckbox->value(playAudio);
 #endif
   alwaysCursorCheckbox->value(alwaysCursor);
+  disableLocalCursorCheckbox->value(disableLocalMouseCursor);
   if (cursorType == "system") {
     cursorTypeChoice->value(1);
   } else {
@@ -566,6 +572,8 @@ void OptionsDialog::storeOptions(void)
   networkSettings::pingMinimum.setParam(int(pingMinimumSpinner->value()));
   networkSettings::pingEnabled.setParam(bool(pingEnabledCheckbox->value()));
   shellyPower::delaySeconds.setParam(int(shellyDelaySpinner->value()));
+  rdpClient::windowWidth.setParam(int(rdpWidthSpinner->value()));
+  rdpClient::windowHeight.setParam(int(rdpHeightSpinner->value()));
   powerTools::plinkExecutable.setParam(plinkPathInput->value());
   bool vpnChanged = std::string(vpnProfiles::openVpnExecutable) != openVpnPathInput->value() ||
                     std::string(vpnProfiles::wireGuardDirectory) != wireGuardPathInput->value();
@@ -578,6 +586,7 @@ void OptionsDialog::storeOptions(void)
   playAudio.setParam(audioCheckbox->value());
 #endif
   alwaysCursor.setParam(alwaysCursorCheckbox->value());
+  disableLocalMouseCursor.setParam(disableLocalCursorCheckbox->value());
 
   if (cursorTypeChoice->value() == 1) {
     cursorType.setParam("System");
@@ -1038,6 +1047,11 @@ void OptionsDialog::createInputPage(int tx, int ty, int tw, int th)
     fltk_adjust_choice(cursorTypeChoice);
 
     ty += CHOICE_HEIGHT + TIGHT_MARGIN;
+    disableLocalCursorCheckbox = new Fl_Check_Button(tx, ty, width - INDENT, CHECK_HEIGHT,
+      "Disable local mouse cursor");
+    disableLocalCursorCheckbox->callback(handleAlwaysCursor, this);
+    disableLocalCursorCheckbox->tooltip("Hide the local pointer over the VNC desktop. A pointer drawn into the remote image remains visible.");
+    ty += CHECK_HEIGHT + TIGHT_MARGIN;
 
   }
   ty -= TIGHT_MARGIN;
@@ -1625,7 +1639,9 @@ void OptionsDialog::handleAlwaysCursor(Fl_Widget* /*widget*/, void *data)
 {
   OptionsDialog *dialog = (OptionsDialog*)data;
 
-  if (dialog->alwaysCursorCheckbox->value()) {
+  if (dialog->disableLocalCursorCheckbox->value()) dialog->alwaysCursorCheckbox->deactivate();
+  else dialog->alwaysCursorCheckbox->activate();
+  if (!dialog->disableLocalCursorCheckbox->value() && dialog->alwaysCursorCheckbox->value()) {
     dialog->cursorTypeChoice->activate();
   } else {
     dialog->cursorTypeChoice->deactivate();
@@ -1663,4 +1679,31 @@ void OptionsDialog::createToolsPage(int tx, int ty, int tw, int th)
   shellyDelaySpinner = new Fl_Spinner(tx + 260, ty + 260, 100, 27, "Shelly Plug delay (s):");
   shellyDelaySpinner->type(FL_INT_INPUT); shellyDelaySpinner->range(1,3600); shellyDelaySpinner->step(1);
   group->end();
+}
+
+void OptionsDialog::createRdpPage(int tx, int ty, int tw, int th)
+{
+  auto group = new Fl_Group(tx, ty, tw, th, "RDP");
+  rdpWidthSpinner = new Fl_Spinner(tx + 235, ty + 35, 120, 27, "Initial window width (px):");
+  rdpWidthSpinner->type(FL_INT_INPUT); rdpWidthSpinner->range(200,8192); rdpWidthSpinner->step(1);
+  rdpHeightSpinner = new Fl_Spinner(tx + 235, ty + 78, 120, 27, "Initial window height (px):");
+  rdpHeightSpinner->type(FL_INT_INPUT); rdpHeightSpinner->range(200,8192); rdpHeightSpinner->step(1);
+  auto note = new Fl_Box(tx + 15, ty + 120, tw - 30, 55,
+    "The next RDP connection starts with these desktop dimensions.\nThe Windows client adds its window borders.");
+  note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
+  auto restore = new Fl_Button(tx + 30, ty + 205, tw - 60, 35, "Restore default RDP settings");
+  restore->callback(handleRestoreRdp, this);
+  note = new Fl_Box(tx + 15, ty + 260, tw - 30, 95,
+    "Restores the native Windows client's password and certificate prompt settings.\n"
+    "Uses saved recovery settings when available; otherwise enables both prompts.");
+  note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
+  group->end();
+}
+
+void OptionsDialog::handleRestoreRdp(Fl_Widget*, void*)
+{
+  try {
+    bool previous = rdpClient::restoreDefaultSettings();
+    fl_message("%s", previous ? "The previous RDP settings were restored." : "Default RDP password and certificate prompts were restored.");
+  } catch (const std::exception& error) { fl_alert("Unable to restore RDP settings:\n\n%s", error.what()); }
 }

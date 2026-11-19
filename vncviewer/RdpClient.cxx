@@ -3,6 +3,7 @@
 #include "ConnectionProtocol.h"
 #include "RdpDefaults.h"
 #include <core/string.h>
+#include <core/Configuration.h>
 #include <thread>
 #include <cstring>
 #ifdef WIN32
@@ -10,6 +11,8 @@
 #include <wincred.h>
 #endif
 namespace rdpClient {
+core::IntParameter windowWidth("RdpWindowWidth", "Initial RDP desktop width in pixels", 1024, 200, 8192);
+core::IntParameter windowHeight("RdpWindowHeight", "Initial RDP desktop height in pixels", 600, 200, 8192);
 Settings::~Settings() { CredentialVault::erase(password); }
 Settings savedSettings(const Json::Value& document,const std::string& id,const std::string& address) {
   Settings settings; settings.address=connectionProtocol::rdpEndpoint(address).address();
@@ -22,7 +25,7 @@ Settings savedSettings(const Json::Value& document,const std::string& id,const s
   return settings;
 }
 std::string arguments(const Settings& settings) {
-  return "/v:"+connectionProtocol::rdpEndpoint(settings.address).address()+" /w:1024 /h:600";
+  return "/v:"+connectionProtocol::rdpEndpoint(settings.address).address()+" /w:"+std::to_string(int(windowWidth))+" /h:"+std::to_string(int(windowHeight));
 }
 namespace {
 #ifdef WIN32

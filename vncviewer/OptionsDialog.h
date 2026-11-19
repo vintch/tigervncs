@@ -63,6 +63,8 @@ protected:
   void createDisplayPage(int tx, int ty, int tw, int th);
   void createMiscPage(int tx, int ty, int tw, int th);
   void createToolsPage(int tx, int ty, int tw, int th);
+  void createRdpPage(int tx, int ty, int tw, int th);
+  static void handleRestoreRdp(Fl_Widget*, void*);
   void createVpnPage(int tx, int ty, int tw, int th);
   void createNetworkPage(int tx, int ty, int tw, int th);
 
@@ -145,6 +147,7 @@ protected:
   Fl_Group *mouseGroup;
   Fl_Check_Button *emulateMBCheckbox;
   Fl_Check_Button *alwaysCursorCheckbox;
+  Fl_Check_Button *disableLocalCursorCheckbox;
   Fl_Choice *cursorTypeChoice;
   Fl_Group *keyboardGroup;
   Fl_Check_Button *systemKeysCheckbox;
@@ -180,6 +183,7 @@ protected:
   Fl_Check_Button *reconnectCheckbox;
   Fl_Input *openVpnPathInput, *wireGuardPathInput, *openVpnLogInput, *plinkPathInput;
   Fl_Spinner* shellyDelaySpinner;
+  Fl_Spinner *rdpWidthSpinner, *rdpHeightSpinner;
   Fl_Check_Button* pingEnabledCheckbox;
   Fl_Spinner *connectTimeoutSpinner, *sessionTimeoutSpinner, *pingTimeoutSpinner,
              *pingPeriodSpinner, *pingMinimumSpinner;

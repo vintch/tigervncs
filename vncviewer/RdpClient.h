@@ -2,9 +2,12 @@
 #ifndef TIGERVNCS_RDP_CLIENT_H
 #define TIGERVNCS_RDP_CLIENT_H
 #include "ConnectionStore.h"
+#include <core/Configuration.h>
 #include <atomic>
 #include <memory>
 namespace rdpClient {
+extern core::IntParameter windowWidth;
+extern core::IntParameter windowHeight;
 struct Settings {
   std::string address, username, password; bool hasPassword=false;
   ~Settings();

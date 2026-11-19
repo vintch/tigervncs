@@ -41,6 +41,7 @@ extern core::IntParameter pointerEventInterval;
 extern core::BoolParameter emulateMiddleButton;
 extern core::BoolParameter dotWhenNoCursor; // deprecated
 extern core::BoolParameter alwaysCursor;
+extern core::BoolParameter disableLocalMouseCursor;
 extern core::EnumParameter cursorType;
 
 extern core::StringParameter passwordFile;

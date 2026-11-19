@@ -12,8 +12,9 @@ Features added in this fork
 
 * **Fit the remote desktop to the window.** Toggle "Scale desktop to window"
   in the session menu (Ctrl+Alt+M with the default shortcut modifiers) or
-  Options / Display. Aspect ratio, cursor scaling and mouse coordinates are
-  handled together; the preference survives restarts.
+  Options / Display. Aspect ratio and mouse coordinates are handled together;
+  the local cursor keeps its original size. Options / Input can hide the local
+  cursor with "Disable local mouse cursor". Preferences survive restarts.
 * **Connection manager with nested folders.** Save computer addresses,
   usernames and passwords; select an entry to fill the server field, or
   double-click to connect. The context menu provides creation, editing,
@@ -25,7 +26,10 @@ Features added in this fork
   The manager hides while mstsc runs and returns when it exits. The client
   starts without an RDP file, avoiding the unsigned-connection confirmation.
   Password and certificate prompts are suppressed using temporary native
-  client settings, which are restored when it exits.
+  client settings, which are restored when it exits. Options / RDP sets the
+  initial window dimensions and provides "Restore default RDP settings".
+  Recovery values are saved in JSON so native settings can be restored after
+  an interrupted session.
 * **Protected saved passwords.** VNC and Shelly Plug passwords use
   AES-256-GCM with a key protected by Windows DPAPI for the current account.
   Copying the configuration alone to another account or computer does not

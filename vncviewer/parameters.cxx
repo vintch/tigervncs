@@ -37,6 +37,7 @@
 #include "PowerTools.h"
 #include "ShellyPower.h"
 #include "PortableSettings.h"
+#include "RdpClient.h"
 
 #include <core/Configuration.h>
 #include <core/Exception.h>
@@ -75,6 +76,8 @@ core::BoolParameter
                   _("[DEPRECATED] Show a dot cursor when the server "
                     "sends an invisible cursor"),
                   false);
+core::BoolParameter
+  disableLocalMouseCursor("DisableLocalMouseCursor", _("Hide the local pointer over the VNC desktop"), false);
 core::BoolParameter
   alwaysCursor("AlwaysCursor",
                _("Show local cursor when not provided by the server"),
@@ -283,6 +286,7 @@ static core::Parameter* parameterArray[] = {
   &networkSettings::pingMinimum, &networkSettings::pingEnabled,
   &vpnProfiles::openVpnExecutable, &vpnProfiles::wireGuardDirectory, &vpnProfiles::openVpnLog,
   &powerTools::plinkExecutable, &shellyPower::delaySeconds,
+  &rdpClient::windowWidth, &rdpClient::windowHeight,
   /* Security */
 #ifdef HAVE_GNUTLS
   &rfb::CSecurityTLS::X509CA,
@@ -313,6 +317,7 @@ static core::Parameter* parameterArray[] = {
   &viewOnly,
   &emulateMiddleButton,
   &alwaysCursor,
+  &disableLocalMouseCursor,
   &cursorType,
   &acceptClipboard,
   &sendClipboard,

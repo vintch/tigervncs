@@ -152,7 +152,9 @@ try {
             'Manual asynchronous Wireguard/OpenVPN status and control',
             'Session-long administrator access for Wireguard',
             'Shelly Plug power cycling with cancellable delay and device backup timer',
-            'VNC/RDP connection types with external Windows client lifecycle')
+            'VNC/RDP connection types with external Windows client lifecycle',
+            'Configurable RDP dimensions and durable native-settings recovery',
+            'Unscaled VNC cursor with optional local pointer hiding')
         bytes = (Get-Item -LiteralPath $outputExe).Length
         sha256 = (Get-FileHash -LiteralPath $outputExe -Algorithm SHA256).Hash
         systemDlls = $dllNames

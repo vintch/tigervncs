@@ -4,11 +4,18 @@ TigerVNCs portable preferences
 The session menu (Ctrl+Alt+M with the default modifiers) contains the
 "Scale desktop to window" checkbox. This fits the complete remote desktop
 inside the client area, preserving aspect ratio. Empty margins are normal
-when the two aspect ratios differ. Scaling includes the local cursor and
-pointer coordinates, and takes precedence over remote desktop resizing.
+when the two aspect ratios differ. Pointer coordinates follow the image
+transform, while the locally rendered cursor keeps its original pixel size.
+Scaling takes precedence over remote desktop resizing.
 Unchecking restores the original 1:1 display and scrollbars.
 
-The same checkbox is available under Options / Display. Options / Compression
+Options / Input includes Disable local mouse cursor (default off). It hides
+the local pointer over the VNC desktop, including in view-only mode. A cursor
+drawn into the framebuffer by the server remains part of the scaled image.
+The existing blank-cursor fallback preferences still apply when local cursor
+display is enabled. The option does not affect the external RDP client.
+
+The same scaling checkbox is available under Options / Display. Options / Compression
 controls the preferred encoding, automatic selection, color depth, compression
 level and JPEG quality. To use a manually selected encoding/quality, disable
 Auto select. The server must support the requested encoding.
@@ -351,3 +358,30 @@ own history, native preferences, caching and resource-redirection settings.
 VNC display/compression settings do not configure the external RDP client.
 
 Reference: https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/remotepc/understanding-security-warnings
+
+RDP preferences and manual recovery
+-----------------------------------
+Options / RDP sets RdpWindowWidth and RdpWindowHeight (default 1024 x 600;
+200-8192 pixels each). These are the initial remote desktop dimensions passed
+as /w and /h; the outer window also includes the native client's borders.
+Accept Options to save them in the viewer section of tigervncs.json.
+
+Before changing native prompt flags, the launcher saves their original values
+in rdpRecovery inside the same JSON. No password or Default.rdp contents are
+stored in this recovery snapshot. Successful cleanup removes the snapshot.
+A later launch first recovers pending settings from an interrupted session.
+Process identity checks prevent recovery from overriding another active
+TigerVNCs owner of the same snapshot.
+
+Restore default RDP settings uses the saved snapshot when one exists. Without
+a snapshot, it enables native password prompts and certificate warnings
+(prompt for credentials=1, authentication level=2). Other native preferences
+are preserved. Recovery is refused while this process has an active RDP
+settings lease. This button restores native prompt settings, not saved
+connections, window dimensions or prior Credential Manager records lost
+through a forced process termination.
+
+The temporary credential target remains TERMSRV/<host>: mstsc looks up its
+credentials using that service prefix. TIGERVNCSSRV is not a configurable
+replacement for the system client's lookup.
+Reference: https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-admx-credssp

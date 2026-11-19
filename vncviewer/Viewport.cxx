@@ -265,6 +265,10 @@ void Viewport::setCursor()
 
 void Viewport::showCursor()
 {
+  if (disableLocalMouseCursor) {
+    window()->cursor(FL_CURSOR_NONE);
+    return;
+  }
   if (viewOnly) {
     window()->cursor(FL_CURSOR_DEFAULT);
     return;
@@ -272,17 +276,9 @@ void Viewport::showCursor()
 
   if (cursorIsBlank && alwaysCursor && (cursorType == "system")) {
     window()->cursor(FL_CURSOR_DEFAULT);
-  } else if ((w() == frameBuffer->width()) &&
-             (h() == frameBuffer->height())) {
-    window()->cursor(cursor, cursorHotspot.x, cursorHotspot.y);
   } else {
-    core::Point size = desktopToWindow({cursor->w(), cursor->h()});
-    core::Point hotspot = desktopToWindow(cursorHotspot);
-    Fl_RGB_Image* scaled = static_cast<Fl_RGB_Image*>(
-      cursor->copy(std::max(1, size.x), std::max(1, size.y)));
-    window()->cursor(scaled, std::min(hotspot.x, scaled->w() - 1),
-                      std::min(hotspot.y, scaled->h() - 1));
-    delete scaled;
+    // A cursor is a local pointer, independent of framebuffer scaling.
+    window()->cursor(cursor, cursorHotspot.x, cursorHotspot.y);
   }
 }
 
