@@ -27,7 +27,8 @@ Features added in this fork
   starts without an RDP file, avoiding the unsigned-connection confirmation.
   Password and certificate prompts are suppressed using temporary native
   client settings, which are restored when it exits. Options / RDP sets the
-  initial window dimensions and provides "Restore default RDP settings".
+  optional initial window dimensions with "Set initial RDP window size"
+  (off by default) and provides "Restore default RDP settings".
   Recovery values are saved in JSON so native settings can be restored after
   an interrupted session.
 * **Protected saved passwords.** VNC and Shelly Plug passwords use

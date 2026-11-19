@@ -65,6 +65,7 @@ protected:
   void createToolsPage(int tx, int ty, int tw, int th);
   void createRdpPage(int tx, int ty, int tw, int th);
   static void handleRestoreRdp(Fl_Widget*, void*);
+  static void handleRdpSize(Fl_Widget*, void*);
   void createVpnPage(int tx, int ty, int tw, int th);
   void createNetworkPage(int tx, int ty, int tw, int th);
 
@@ -184,6 +185,7 @@ protected:
   Fl_Input *openVpnPathInput, *wireGuardPathInput, *openVpnLogInput, *plinkPathInput;
   Fl_Spinner* shellyDelaySpinner;
   Fl_Spinner *rdpWidthSpinner, *rdpHeightSpinner;
+  Fl_Check_Button *rdpForceSizeCheckbox;
   Fl_Check_Button* pingEnabledCheckbox;
   Fl_Spinner *connectTimeoutSpinner, *sessionTimeoutSpinner, *pingTimeoutSpinner,
              *pingPeriodSpinner, *pingMinimumSpinner;

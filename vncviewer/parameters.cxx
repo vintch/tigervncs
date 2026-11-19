@@ -286,7 +286,7 @@ static core::Parameter* parameterArray[] = {
   &networkSettings::pingMinimum, &networkSettings::pingEnabled,
   &vpnProfiles::openVpnExecutable, &vpnProfiles::wireGuardDirectory, &vpnProfiles::openVpnLog,
   &powerTools::plinkExecutable, &shellyPower::delaySeconds,
-  &rdpClient::windowWidth, &rdpClient::windowHeight,
+  &rdpClient::forceWindowSize, &rdpClient::windowWidth, &rdpClient::windowHeight,
   /* Security */
 #ifdef HAVE_GNUTLS
   &rfb::CSecurityTLS::X509CA,

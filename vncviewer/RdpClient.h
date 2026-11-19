@@ -6,6 +6,7 @@
 #include <atomic>
 #include <memory>
 namespace rdpClient {
+extern core::BoolParameter forceWindowSize;
 extern core::IntParameter windowWidth;
 extern core::IntParameter windowHeight;
 struct Settings {

@@ -399,6 +399,8 @@ void OptionsDialog::loadOptions(void)
   shellyDelaySpinner->value(shellyPower::delaySeconds);
   rdpWidthSpinner->value(rdpClient::windowWidth);
   rdpHeightSpinner->value(rdpClient::windowHeight);
+  rdpForceSizeCheckbox->value(rdpClient::forceWindowSize);
+  handleRdpSize(rdpForceSizeCheckbox, this);
   plinkPathInput->value(std::string(powerTools::plinkExecutable).c_str());
   openVpnLogInput->value(std::string(vpnProfiles::openVpnLog).c_str());
   openVpnPathInput->value(std::string(vpnProfiles::openVpnExecutable).c_str());
@@ -574,6 +576,7 @@ void OptionsDialog::storeOptions(void)
   shellyPower::delaySeconds.setParam(int(shellyDelaySpinner->value()));
   rdpClient::windowWidth.setParam(int(rdpWidthSpinner->value()));
   rdpClient::windowHeight.setParam(int(rdpHeightSpinner->value()));
+  rdpClient::forceWindowSize.setParam(bool(rdpForceSizeCheckbox->value()));
   powerTools::plinkExecutable.setParam(plinkPathInput->value());
   bool vpnChanged = std::string(vpnProfiles::openVpnExecutable) != openVpnPathInput->value() ||
                     std::string(vpnProfiles::wireGuardDirectory) != wireGuardPathInput->value();
@@ -1684,16 +1687,18 @@ void OptionsDialog::createToolsPage(int tx, int ty, int tw, int th)
 void OptionsDialog::createRdpPage(int tx, int ty, int tw, int th)
 {
   auto group = new Fl_Group(tx, ty, tw, th, "RDP");
-  rdpWidthSpinner = new Fl_Spinner(tx + 235, ty + 35, 120, 27, "Initial window width (px):");
+  rdpForceSizeCheckbox = new Fl_Check_Button(tx + 15, ty + 15, tw - 30, 25, "Set initial RDP window size");
+  rdpForceSizeCheckbox->callback(handleRdpSize, this);
+  rdpWidthSpinner = new Fl_Spinner(tx + 235, ty + 65, 120, 27, "Initial window width (px):");
   rdpWidthSpinner->type(FL_INT_INPUT); rdpWidthSpinner->range(200,8192); rdpWidthSpinner->step(1);
-  rdpHeightSpinner = new Fl_Spinner(tx + 235, ty + 78, 120, 27, "Initial window height (px):");
+  rdpHeightSpinner = new Fl_Spinner(tx + 235, ty + 108, 120, 27, "Initial window height (px):");
   rdpHeightSpinner->type(FL_INT_INPUT); rdpHeightSpinner->range(200,8192); rdpHeightSpinner->step(1);
-  auto note = new Fl_Box(tx + 15, ty + 120, tw - 30, 55,
-    "The next RDP connection starts with these desktop dimensions.\nThe Windows client adds its window borders.");
+  auto note = new Fl_Box(tx + 15, ty + 150, tw - 30, 55,
+    "Enable to use these desktop dimensions. Otherwise mstsc uses its own defaults.\nThe Windows client adds its window borders.");
   note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
-  auto restore = new Fl_Button(tx + 30, ty + 205, tw - 60, 35, "Restore default RDP settings");
+  auto restore = new Fl_Button(tx + 30, ty + 235, tw - 60, 35, "Restore default RDP settings");
   restore->callback(handleRestoreRdp, this);
-  note = new Fl_Box(tx + 15, ty + 260, tw - 30, 95,
+  note = new Fl_Box(tx + 15, ty + 290, tw - 30, 95,
     "Restores the native Windows client's password and certificate prompt settings.\n"
     "Uses saved recovery settings when available; otherwise enables both prompts.");
   note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
@@ -1706,4 +1711,14 @@ void OptionsDialog::handleRestoreRdp(Fl_Widget*, void*)
     bool previous = rdpClient::restoreDefaultSettings();
     fl_message("%s", previous ? "The previous RDP settings were restored." : "Default RDP password and certificate prompts were restored.");
   } catch (const std::exception& error) { fl_alert("Unable to restore RDP settings:\n\n%s", error.what()); }
+}
+
+void OptionsDialog::handleRdpSize(Fl_Widget*, void* data)
+{
+  auto dialog = static_cast<OptionsDialog*>(data);
+  if (dialog->rdpForceSizeCheckbox->value()) {
+    dialog->rdpWidthSpinner->activate(); dialog->rdpHeightSpinner->activate();
+  } else {
+    dialog->rdpWidthSpinner->deactivate(); dialog->rdpHeightSpinner->deactivate();
+  }
 }

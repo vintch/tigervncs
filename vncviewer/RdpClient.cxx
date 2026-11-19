@@ -11,6 +11,7 @@
 #include <wincred.h>
 #endif
 namespace rdpClient {
+core::BoolParameter forceWindowSize("RdpForceWindowSize", "Set explicit initial RDP desktop dimensions", false);
 core::IntParameter windowWidth("RdpWindowWidth", "Initial RDP desktop width in pixels", 1024, 200, 8192);
 core::IntParameter windowHeight("RdpWindowHeight", "Initial RDP desktop height in pixels", 600, 200, 8192);
 Settings::~Settings() { CredentialVault::erase(password); }
@@ -25,7 +26,9 @@ Settings savedSettings(const Json::Value& document,const std::string& id,const s
   return settings;
 }
 std::string arguments(const Settings& settings) {
-  return "/v:"+connectionProtocol::rdpEndpoint(settings.address).address()+" /w:"+std::to_string(int(windowWidth))+" /h:"+std::to_string(int(windowHeight));
+  std::string result="/v:"+connectionProtocol::rdpEndpoint(settings.address).address();
+  if(forceWindowSize) result+=" /w:"+std::to_string(int(windowWidth))+" /h:"+std::to_string(int(windowHeight));
+  return result;
 }
 namespace {
 #ifdef WIN32

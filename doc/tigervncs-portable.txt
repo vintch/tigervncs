@@ -334,7 +334,8 @@ monitoring suspended. Its completion restores the same window and selection.
 Launch errors also return to the manager. No remote shutdown, shell command
 or desktop input is performed as part of launching or closing the client.
 
-The launcher passes only /v:host[:port] and window dimensions to mstsc. No
+The launcher passes /v:host[:port] and, when explicitly enabled, window
+dimensions to mstsc. No
 RDP connection file is created, so Windows' unsigned-RDP-file confirmation
 is not triggered. Saved credentials are supplied as a temporary Windows
 logon-session TERMSRV credential, never as command-line arguments. After
@@ -361,9 +362,12 @@ Reference: https://learn.microsoft.com/en-us/windows-server/remote/remote-deskto
 
 RDP preferences and manual recovery
 -----------------------------------
-Options / RDP sets RdpWindowWidth and RdpWindowHeight (default 1024 x 600;
-200-8192 pixels each). These are the initial remote desktop dimensions passed
-as /w and /h; the outer window also includes the native client's borders.
+Options / RDP includes Set initial RDP window size (RdpForceWindowSize,
+default off). When unchecked, no /w or /h arguments are passed and mstsc uses
+its native defaults. Enabling it activates RdpWindowWidth and RdpWindowHeight
+(default 1024 x 600; 200-8192 pixels each). These dimensions are passed as /w
+and /h; the outer window also includes the native client's borders. Stored
+dimensions are retained while the checkbox is off.
 Accept Options to save them in the viewer section of tigervncs.json.
 
 Before changing native prompt flags, the launcher saves their original values

@@ -28,17 +28,23 @@ TEST(RdpClient, ParsesNativeRdpPortsAndRejectsPropertyInjection) {
 TEST(RdpClient, NativeLaunchArgumentsNeedNoConnectionFileOrPassword) {
   rdpClient::Settings settings; settings.address="host:3390"; settings.username="DOMAIN\\user";
   settings.password="synthetic-password"; settings.hasPassword=true;
-  EXPECT_EQ(rdpClient::arguments(settings),"/v:host:3390 /w:1024 /h:600");
+  EXPECT_EQ(rdpClient::arguments(settings),"/v:host:3390");
   EXPECT_EQ(rdpClient::arguments(settings).find(settings.password),std::string::npos);
   EXPECT_EQ(rdpClient::arguments(settings).find(settings.username),std::string::npos);
   settings.address="host /admin"; EXPECT_THROW(rdpClient::arguments(settings),std::runtime_error);
 }
 TEST(RdpClient, ConfigurableStartingDimensionsArePassedToMstsc) {
   int oldWidth=rdpClient::windowWidth,oldHeight=rdpClient::windowHeight;
+  bool oldForce=rdpClient::forceWindowSize;
   rdpClient::windowWidth.setParam(1600); rdpClient::windowHeight.setParam(900);
   rdpClient::Settings settings; settings.address="host";
+  EXPECT_EQ(rdpClient::arguments(settings),"/v:host");
+  rdpClient::forceWindowSize.setParam(true);
   EXPECT_EQ(rdpClient::arguments(settings),"/v:host /w:1600 /h:900");
+  rdpClient::forceWindowSize.setParam(false);
+  EXPECT_EQ(rdpClient::arguments(settings),"/v:host");
   rdpClient::windowWidth.setParam(oldWidth); rdpClient::windowHeight.setParam(oldHeight);
+  rdpClient::forceWindowSize.setParam(oldForce);
 }
 TEST(RdpClient, SavedProtocolAndPasswordStayBoundToTheirEndpoint) {
   const char* path="rdp-store-test.json"; std::remove(path); ConnectionStore store(path);
@@ -183,7 +189,7 @@ TEST(RdpClient, ManualRestoreWithoutSnapshotEnablesPromptsAndKeepsOtherFields) {
   std::remove(path); std::remove(config);
 }
 int main(int argc,char** argv) {
-  if(argc==4 && std::string(argv[1]).find("/v:")==0) {
+  if((argc==2 || argc==4) && std::string(argv[1]).find("/v:")==0) {
     try {
       auto endpoint=connectionProtocol::rdpEndpoint(std::string(argv[1]).substr(3));
       auto target=core::utf8ToUTF16(("TERMSRV/"+endpoint.host).c_str());

@@ -34,7 +34,7 @@ def run(executable):
         "schemaVersion": 1,
         "viewer": {"ViewOnly": True, "ConnectTimeoutSeconds": 7,
                    "SessionTimeoutSeconds": 13, "PingEnabled": False,
-                   "RdpWindowWidth": 1600, "RdpWindowHeight": 900,
+                   "RdpForceWindowSize": True, "RdpWindowWidth": 1600, "RdpWindowHeight": 900,
                    "DisableLocalMouseCursor": True,
                    "PingPeriodSeconds": 11, "PingMinimumIntervalSeconds": 2,
                    "WireGuardConfigurationDirectory": r"C:\VPN test profiles",
