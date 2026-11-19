@@ -27,6 +27,17 @@ target_link_libraries(portableconfig PRIVATE core GTest::gtest_main jsoncpp_stat
 gtest_discover_tests(portableconfig)
 
 if(WIN32)
+  add_executable(rdpclient rdpclient.cxx ../../vncviewer/RdpClient.cxx ../../vncviewer/RdpDefaults.cxx ../../vncviewer/ConnectionStore.cxx
+    ../../vncviewer/VpnProfiles.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)
+  target_compile_definitions(rdpclient PRIVATE TIGERVNCS_RDP_TEST)
+  target_include_directories(rdpclient SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
+  target_link_libraries(rdpclient PRIVATE network core GTest::gtest jsoncpp_static ${FLTK_LIBRARIES} bcrypt crypt32 advapi32)
+  gtest_discover_tests(rdpclient)
+  add_executable(rdp_client_probe EXCLUDE_FROM_ALL ../integration/rdp_client_probe.cxx
+    ../../vncviewer/RdpClient.cxx ../../vncviewer/RdpDefaults.cxx ../../vncviewer/ConnectionStore.cxx
+    ../../vncviewer/VpnProfiles.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)
+  target_include_directories(rdp_client_probe SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
+  target_link_libraries(rdp_client_probe PRIVATE network core jsoncpp_static ${FLTK_LIBRARIES} bcrypt crypt32 advapi32)
   add_executable(shelly_power_probe EXCLUDE_FROM_ALL ../integration/shelly_power_probe.cxx
     ../../vncviewer/ShellyPower.cxx ../../vncviewer/ConnectionStore.cxx
     ../../vncviewer/VpnProfiles.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)

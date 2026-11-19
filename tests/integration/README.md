@@ -75,3 +75,15 @@ editing, the Tools delay preference, both confirmations for a cached green
 computer, and Cancel restoring power while the main window stays blocked.
 Live outlet control requires explicit authorization. Shut down an online Mac
 through SSH before cutting its outlet. Always leave the plug switched on.
+
+The `rdpclient` unit target launches itself as a non-networking mstsc substitute
+to verify the process lifetime, temporary credential handoff and restoration.
+It also checks protocol defaults, port syntax, endpoint binding and restoration
+of the native password/certificate prompt flags without changing other settings.
+For explicitly authorized live RDP checks, build `rdp_client_probe`. Its `seed`
+operation takes a config path, host and username; supply the password through
+standard input, never command-line arguments. Then `connect <config>` runs the
+production launcher. Use an isolated viewer/config under `build/` to verify
+Connect and double-click, hidden/restored manager state, and disabled macOS
+session options. Tests must not send input or execute commands on the remote
+desktop; disconnect by closing the local client or terminating its test PID.
