@@ -12,6 +12,16 @@
 #include <windows.h>
 #endif
 namespace vpnProfiles {
+namespace {
+std::string defaultLogPath() {
+#ifdef WIN32
+  wchar_t path[32768]; DWORD size = GetEnvironmentVariableW(L"APPDATA", path, 32768);
+  if (size && size < 32768) return core::utf16ToUTF8(path) + "\\OpenVPN Connect\\log\\ovpn.log";
+#endif
+  return "";
+}
+}
+core::StringParameter openVpnLog("OpenVPNConnectLogFile", "OpenVPN Connect log file", defaultLogPath().c_str());
 core::StringParameter openVpnExecutable("OpenVPNConnectExecutable", "OpenVPN Connect executable", "C:\\Program Files\\OpenVPN Connect\\OpenVPNConnect.exe");
 core::StringParameter wireGuardDirectory("WireGuardConfigurationDirectory", "WireGuard configuration directory", "C:\\Program Files\\WireGuard\\Data\\Configurations");
 namespace {
@@ -130,7 +140,11 @@ std::vector<Profile> parseOpenVpn(const std::string& text) {
         std::any_of(id.begin(), id.end(), [](unsigned char c) { return c < 32; }) ||
         std::any_of(name.begin(), name.end(), [](unsigned char c) { return c < 32; }))
       throw std::runtime_error("OpenVPN Connect returned an invalid profile identity.");
-    if (seen.insert(id).second) result.push_back({id, name});
+    std::string host = entry["host"].isString() ? entry["host"].asString() : "";
+    if (entry["server-override"].isString() && !entry["server-override"].asString().empty() && entry["server-override"] != "none")
+      host = entry["server-override"].asString();
+    if (seen.insert(id).second) result.push_back({id, name, host,
+                                                   entry["username"].isString() ? entry["username"].asString() : ""});
   }
   sortProfiles(result); return result;
 }

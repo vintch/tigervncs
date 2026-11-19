@@ -393,6 +393,7 @@ void OptionsDialog::loadOptions(void)
   pingMinimumSpinner->value(networkSettings::pingMinimum);
   pingEnabledCheckbox->value(networkSettings::pingEnabled);
   plinkPathInput->value(std::string(powerTools::plinkExecutable).c_str());
+  openVpnLogInput->value(std::string(vpnProfiles::openVpnLog).c_str());
   openVpnPathInput->value(std::string(vpnProfiles::openVpnExecutable).c_str());
   wireGuardPathInput->value(std::string(vpnProfiles::wireGuardDirectory).c_str());
 #ifdef HAVE_AUDIO
@@ -567,6 +568,7 @@ void OptionsDialog::storeOptions(void)
                     std::string(vpnProfiles::wireGuardDirectory) != wireGuardPathInput->value();
   vpnProfiles::openVpnExecutable.setParam(openVpnPathInput->value());
   vpnProfiles::wireGuardDirectory.setParam(wireGuardPathInput->value());
+  vpnProfiles::openVpnLog.setParam(openVpnLogInput->value());
   if (vpnChanged) vpnProfiles::refresh();
   suspendPresence();
 #ifdef HAVE_AUDIO
@@ -1634,8 +1636,12 @@ void OptionsDialog::createVpnPage(int tx, int ty, int tw, int th)
   openVpnPathInput->align(FL_ALIGN_TOP_LEFT);
   wireGuardPathInput = new Fl_Input(tx + 15, ty + 112, tw - 30, 27, "Wireguard configuration directory:");
   wireGuardPathInput->align(FL_ALIGN_TOP_LEFT);
-  auto note = new Fl_Box(tx + 15, ty + 160, tw - 30, 80,
-    "Profiles are read at startup and when these paths change.\nVPN associations can be set in the computer editor.\nVPN connections are not activated automatically yet.");
+  openVpnLogInput = new Fl_Input(tx + 15, ty + 179, tw - 30, 27, "OpenVPN Connect log file:");
+  openVpnLogInput->align(FL_ALIGN_TOP_LEFT);
+  auto note = new Fl_Box(tx + 15, ty + 230, tw - 30, 100,
+    "The VPN button controls the selected computer's associated profile.\n"
+    "Selecting a computer never connects a VPN automatically.\n"
+    "OpenVPN status comes from its network adapter; the active profile is read from this log.");
   note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
   group->end();
 }

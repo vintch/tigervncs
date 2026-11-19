@@ -42,24 +42,30 @@ if(WIN32)
   target_include_directories(connection_fixture SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
   target_link_libraries(connection_fixture PRIVATE network core jsoncpp_static
     ${FLTK_LIBRARIES} bcrypt crypt32)
+  add_executable(vpn_control_probe EXCLUDE_FROM_ALL ../integration/vpn_control_probe.cxx
+    ../../vncviewer/VpnControl.cxx ../../vncviewer/VpnProfiles.cxx ../../vncviewer/PortableConfig.cxx)
+  target_include_directories(vpn_control_probe SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
+  target_link_libraries(vpn_control_probe PRIVATE network core jsoncpp_static ${FLTK_LIBRARIES} iphlpapi)
   add_executable(power_tools_probe EXCLUDE_FROM_ALL ../integration/power_tools_probe.cxx
     ../../vncviewer/PowerTools.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)
   target_include_directories(power_tools_probe SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
   target_link_libraries(power_tools_probe PRIVATE network core jsoncpp_static ${FLTK_LIBRARIES} bcrypt crypt32)
   add_executable(plink_stub EXCLUDE_FROM_ALL ../integration/plink_stub.cxx)
+  add_executable(vpn_cli_stub EXCLUDE_FROM_ALL ../integration/vpn_cli_stub.cxx)
   if(MINGW)
     target_link_options(plink_stub PRIVATE -municode)
+    target_link_options(vpn_cli_stub PRIVATE -municode)
   endif()
-  add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx presence.cxx sessionliveness.cxx networksettings.cxx powertools.cxx
-    ../../vncviewer/NetworkSettings.cxx ../../vncviewer/PowerTools.cxx
+  add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx presence.cxx sessionliveness.cxx networksettings.cxx powertools.cxx vpncontrol.cxx
+    ../../vncviewer/NetworkSettings.cxx ../../vncviewer/PowerTools.cxx ../../vncviewer/VpnControl.cxx
     ../../vncviewer/PresenceMonitor.cxx ../../vncviewer/ConnectionStore.cxx
     ../../vncviewer/VpnProfiles.cxx
     ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx
     ../../vncviewer/ConnectionTree.cxx)
   target_include_directories(connectionstore SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
   target_link_libraries(connectionstore PRIVATE network core GTest::gtest_main jsoncpp_static
-    ${FLTK_LIBRARIES} bcrypt crypt32)
-  add_dependencies(connectionstore plink_stub)
+    ${FLTK_LIBRARIES} bcrypt crypt32 iphlpapi)
+  add_dependencies(connectionstore plink_stub vpn_cli_stub)
   gtest_discover_tests(connectionstore)
   add_executable(scaled_surface scaled_surface.cxx
     ../../vncviewer/Surface.cxx ../../vncviewer/Surface_Win32.cxx)

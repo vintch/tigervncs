@@ -3,6 +3,7 @@
 #include "fltk/util.h"
 #include "NetworkSettings.h"
 #include "VpnProfiles.h"
+#include "VpnUi.h"
 #include <FL/Fl.H>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Tree.H>
@@ -138,6 +139,7 @@ void ServerDialog::treeAction(Fl_Widget*, void* data)
   auto entry = item ? static_cast<ConnectionTreeEntry*>(item->user_data()) : nullptr;
   if (!entry) return;
   d->selectedId = entry->id; d->selectedFolder = entry->folder;
+  d->selectedComputer.clear();
   if (!entry->folder) {
     d->selectedComputer = entry->id;
     for (const auto& computer : d->managerData["connections"])
@@ -333,6 +335,7 @@ void ServerDialog::presenceTick(void* data)
     int selected = d->vpnProfile->value();
     d->updateVpnProfiles(selected >= 0 && size_t(selected) < d->vpnProfileIds.size() ? d->vpnProfileIds[selected] : "");
   }
+  d->updateVpn();
   d->updatePresence();
   Fl::repeat_timeout(0.1, presenceTick, data);
 }
@@ -411,4 +414,56 @@ void ServerDialog::runPowerTool(powerTools::Action action) {
     if (fl_choice("%s", "Cancel", "Confirm", nullptr, question.c_str()) != 1) return;
     powerJob = powerTools::start(std::move(document), computerId, action);
   } catch (...) { fl_message("The command could not be sent."); }
+}
+
+void ServerDialog::updateVpn() {
+  std::string settingsKey = std::string(vpnProfiles::openVpnExecutable) + "\n" + std::string(vpnProfiles::wireGuardDirectory) + "\n" + std::string(vpnProfiles::openVpnLog);
+  if (settingsKey != vpnQuerySettingsKey) {
+    vpnQuerySettingsKey = settingsKey; vpnQuery.reset(); vpnStatusAvailable = false; nextVpnQuery = 0;
+  }
+  if (vpnCommand && vpnCommand->done.load(std::memory_order_acquire)) {
+    auto result = vpnCommand->result; vpnCommand.reset();
+    if (result == vpnControl::Result::NeedElevation) {
+      if (confirmVpnElevation())
+        vpnCommand = vpnControl::startCommand(pendingVpnSettings, pendingVpnProvider, pendingVpnConnect, pendingVpnProfiles, true);
+    } else if (result == vpnControl::Result::Error)
+      fl_message("The VPN command could not be completed.");
+    vpnStatusAvailable = false; vpnQuery.reset(); nextVpnQuery = 0;
+  }
+  if (vpnQuery && vpnQuery->done.load(std::memory_order_acquire)) {
+    vpnStatus = vpnQuery->snapshot; vpnStatusAvailable = true; vpnQuery.reset();
+  }
+  auto now = pingClockMs();
+  if (!vpnQuery && !vpnCommand && now >= nextVpnQuery) {
+    vpnQuery = vpnControl::startQuery(vpnControl::settings()); nextVpnQuery = now + 1000;
+  }
+  vpnControl::Association target;
+  for (const auto& computer : managerData["connections"])
+    if (computer["id"] == selectedComputer) target = vpnControl::association(computer);
+  auto appearance = vpnControl::presentation(target, vpnStatus, bool(vpnCommand) || !vpnStatusAvailable);
+  auto image = vpnPlanet(appearance.colour);
+  if (vpnButton->image() != image) { vpnButton->image(image); vpnButton->redraw(); }
+  if (appearance.enabled) vpnButton->activate(); else vpnButton->deactivate();
+  const char* tooltip = !target.enabled ? "Select a computer with a VPN association." :
+    !appearance.enabled ? "VPN status is unavailable or a command is in progress." :
+    appearance.colour == vpnControl::Colour::Green ? "Disconnect the associated VPN profile." :
+    appearance.colour == vpnControl::Colour::Amber ? "A different VPN profile is connected. Disconnect it." : "Connect the associated VPN profile.";
+  vpnButton->tooltip(tooltip);
+}
+void ServerDialog::handleVpn(Fl_Widget*, void* data) {
+  auto dialog = static_cast<ServerDialog*>(data);
+  if (dialog->vpnCommand || !dialog->vpnStatusAvailable) return;
+  vpnControl::Association target;
+  for (const auto& computer : dialog->managerData["connections"])
+    if (computer["id"] == dialog->selectedComputer) target = vpnControl::association(computer);
+  auto plan = vpnControl::plan(target, dialog->vpnStatus);
+  if (!plan.available) return;
+  if (plan.confirmation && fl_choice("A VPN connection is active, but it uses a different profile.\n\nDisconnect the existing VPN connection?",
+                                    "Cancel", "Disconnect", nullptr) != 1) return;
+  const auto& profiles = plan.profiles;
+  bool connect = plan.connect;
+  dialog->pendingVpnSettings = vpnControl::settings(); dialog->pendingVpnProvider = target.provider;
+  dialog->pendingVpnConnect = connect; dialog->pendingVpnProfiles = profiles;
+  dialog->vpnCommand = vpnControl::startCommand(dialog->pendingVpnSettings, target.provider, connect, profiles);
+  dialog->updateVpn();
 }

@@ -6,8 +6,12 @@
 #include <string>
 #include <vector>
 namespace vpnProfiles {
-extern core::StringParameter openVpnExecutable, wireGuardDirectory;
-struct Profile { std::string id, name; };
+extern core::StringParameter openVpnExecutable, wireGuardDirectory, openVpnLog;
+struct Profile {
+  std::string id, name, host, username;
+  Profile(const std::string& identifier = "", const std::string& label = "", const std::string& server = "", const std::string& user = "")
+    : id(identifier), name(label), host(server), username(user) {}
+};
 struct Catalog { std::vector<Profile> wireguard, openvpn; std::string wireguardError, openvpnError; bool loading = false; };
 void refresh();
 Catalog snapshot();

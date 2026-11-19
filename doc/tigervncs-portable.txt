@@ -210,3 +210,57 @@ which runs the real installed plink against a loopback-only synthetic SSH server
 That server validates authentication, stdin and command syntax, but NEVER runs
 shutdown/reboot commands. It needs Paramiko in .tools/ssh-test-python and an
 available loopback port 22. No live computer is powered off or restarted by tests.
+
+Manual VPN status/control
+-------------------------
+The small VPN button at the right of Options/Load has original embedded globe
+icons: grey, amber and green. It is a separate manual tool. Selecting a saved
+computer or starting TigerVNCs NEVER starts, switches or stops a VPN.
+
+No enabled association: grey and disabled. A valid associated protocol with
+no active tunnel: grey and enabled (click to connect). A different active
+profile: amber (click asks to disconnect the current profile; confirmation
+only disconnects it and never connects the selected profile). The selected
+profile active: green (click disconnects it without another confirmation).
+Read failures/ambiguous profiles and transitions disable the grey button
+silently. CLI/service execution errors alone show a concise error message.
+
+Status queries and commands run on detached workers with no window pointers;
+the manager polls completed jobs and remains responsive. Status is refreshed
+once per second while the manager exists. Commands disable the VPN button
+until they finish. Query failures never display alerts or change connections.
+ICMP presence is unrelated to VPN selection, state and control.
+
+Wireguard uses WireGuardTunnel$<profile> services. Missing services are created
+using the installed WireGuard executable and the associated .conf.dpapi/.conf
+in WireGuardConfigurationDirectory. Services controlled through this manual
+button are changed to demand/manual startup, preventing automatic VPN
+connection when Windows next boots. Start/stop waits are bounded. Access
+denied shows an Elevate confirmation with a shield; only after agreement is
+an isolated copy of TigerVNCs run using Windows elevation. The helper accepts
+only validated Wireguard actions/profiles and exits before preference loading,
+so the main process and JSON credentials stay under the normal user account.
+Cancelling elevation does not show an error or connect anything.
+
+Options / VPN adds OpenVPNConnectLogFile (default
+%APPDATA%\OpenVPN Connect\log\ovpn.log). The actual connected state comes
+from an up OpenVPN network adapter with a unicast address; it is not inferred
+from old log events. Only when connected, the latest CONNECTED record identifies
+the effective server and VPN username. These are matched uniquely against
+--list-profiles metadata, honoring server-override when configured. An unreadable
+log or ambiguous/unknown profile disables the button instead of guessing.
+The log is read with shared access and a bounded 1 MiB tail; it is never changed.
+
+OpenVPN Connect commands use --connect-shortcut=<id> and
+--disconnect-shortcut=<id>. The vendor may show its own UI/authentication;
+TigerVNCs does not enter or store VPN credentials. Its own launcher is hidden,
+uses literal quoted arguments and does not invoke a shell. An unsuccessful
+launch, timeout or nonzero CLI exit is reported; VPN negotiation failures in
+the vendor client are reflected by the next network-status query.
+Reference: https://support.openvpn.com/hc/en-us/articles/41389237225499-OpenVPN-Connect-Workaround-for-CLI-Based-Connect-Disconnect-on-macOS-and-Windows
+Reference: https://git.zx2c4.com/wireguard-windows/about/docs/enterprise.md
+
+Live validation used only user-approved profiles: OpenVPN Praxis Dr. Eshagzaiy
+and Hautaerzte; Wireguard eshagzaiy_versatel_wg_config and Hautaerzte-wg_config.
+The initial disconnected state is restored after these tests. Test-only probe
+and CLI-stub executables are excluded from the distributed artifact.

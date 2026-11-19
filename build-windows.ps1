@@ -148,7 +148,8 @@ try {
             'Context menu, persistent sibling order and folder state', 'Rate-limited ICMP presence indicators',
             'Apple current screen and authenticated user session selection',
             'Single JSON persistence and Windows registry migration', 'VPN profile associations',
-            'Hidden SSH power tools using saved credentials')
+            'Hidden SSH power tools using saved credentials',
+            'Manual asynchronous Wireguard/OpenVPN status and control')
         bytes = (Get-Item -LiteralPath $outputExe).Length
         sha256 = (Get-FileHash -LiteralPath $outputExe -Algorithm SHA256).Hash
         systemDlls = $dllNames

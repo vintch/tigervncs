@@ -280,7 +280,7 @@ static core::Parameter* parameterArray[] = {
   &networkSettings::connectTimeout, &networkSettings::sessionTimeout,
   &networkSettings::pingTimeout, &networkSettings::pingPeriod,
   &networkSettings::pingMinimum, &networkSettings::pingEnabled,
-  &vpnProfiles::openVpnExecutable, &vpnProfiles::wireGuardDirectory,
+  &vpnProfiles::openVpnExecutable, &vpnProfiles::wireGuardDirectory, &vpnProfiles::openVpnLog,
   &powerTools::plinkExecutable,
   /* Security */
 #ifdef HAVE_GNUTLS

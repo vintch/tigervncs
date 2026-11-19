@@ -178,7 +178,7 @@ protected:
   /* Misc. */
   Fl_Check_Button *sharedCheckbox;
   Fl_Check_Button *reconnectCheckbox;
-  Fl_Input *openVpnPathInput, *wireGuardPathInput, *plinkPathInput;
+  Fl_Input *openVpnPathInput, *wireGuardPathInput, *openVpnLogInput, *plinkPathInput;
   Fl_Check_Button* pingEnabledCheckbox;
   Fl_Spinner *connectTimeoutSpinner, *sessionTimeoutSpinner, *pingTimeoutSpinner,
              *pingPeriodSpinner, *pingMinimumSpinner;

@@ -67,6 +67,7 @@
 #include "DesktopWindow.h"
 #include "NetworkSettings.h"
 #include "VpnProfiles.h"
+#include "VpnControl.h"
 #include "ServerDialog.h"
 #include "touch.h"
 #include "vncviewer.h"
@@ -603,6 +604,9 @@ static void mktunnel()
 
 int main(int argc, char** argv)
 {
+  int vpnHelperResult;
+  if (vpnControl::helper(argc, argv, vpnHelperResult)) return vpnHelperResult;
+
   argv0 = argv[0];
 
   setlocale(LC_ALL, "");

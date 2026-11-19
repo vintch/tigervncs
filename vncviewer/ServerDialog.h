@@ -22,11 +22,13 @@
 #include <FL/Fl_Window.H>
 #include <string>
 #include <list>
+#include <cstdint>
 #include <vector>
 #include "ConnectionStore.h"
 #include "ConnectionTree.h"
 #include "PresenceMonitor.h"
 #include "PowerTools.h"
+#include "VpnControl.h"
 
 #include "fltk/Fl_Suggestion_Input.h"
 
@@ -57,6 +59,17 @@ protected:
 
 private:
   void createManager(int top);
+  void updateVpn();
+  static void handleVpn(Fl_Widget*, void*);
+  Fl_Button* vpnButton;
+  std::shared_ptr<vpnControl::QueryJob> vpnQuery;
+  std::shared_ptr<vpnControl::CommandJob> vpnCommand;
+  vpnControl::Snapshot vpnStatus;
+  vpnControl::Settings pendingVpnSettings;
+  std::string pendingVpnProvider, vpnQuerySettingsKey;
+  bool pendingVpnConnect = false, vpnStatusAvailable = false;
+  std::vector<std::string> pendingVpnProfiles;
+  int64_t nextVpnQuery = 0;
   void refreshManager(const std::string& selected = "");
   void expandManager(bool expanded);
   void editEntry(bool folder, bool existing);

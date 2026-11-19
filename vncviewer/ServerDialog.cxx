@@ -52,6 +52,7 @@
 #include "fltk/util.h"
 #include "fltk/Fl_Suggestion_Input.h"
 #include "ServerDialog.h"
+#include "VpnUi.h"
 #include "OptionsDialog.h"
 #include "vncviewer.h"
 #include "parameters.h"
@@ -88,6 +89,12 @@ ServerDialog::ServerDialog()
   button = new Fl_Button(x2, y, BUTTON_WIDTH, BUTTON_HEIGHT, _("Load..."));
   button->callback(this->handleLoad, this);
   x2 += BUTTON_WIDTH + INNER_MARGIN;
+
+  vpnButton = new Fl_Button(w() - OUTER_MARGIN - 82, y, 82, BUTTON_HEIGHT, "VPN");
+  vpnButton->image(vpnPlanet(vpnControl::Colour::Grey));
+  vpnButton->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE | FL_ALIGN_IMAGE_NEXT_TO_TEXT);
+  vpnButton->callback(handleVpn, this); vpnButton->deactivate();
+  vpnButton->tooltip("Select a computer with a VPN association.");
 
   y += BUTTON_HEIGHT + INNER_MARGIN;
 
