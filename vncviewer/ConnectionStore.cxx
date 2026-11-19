@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "ConnectionStore.h"
+#include "VpnProfiles.h"
 #include <network/TcpSocket.h>
 #include <core/string.h>
 #include <algorithm>
@@ -75,6 +76,7 @@ void validate(Json::Value& document) {
     if (!connection.isObject() || !connection["id"].isString() || !connection["name"].isString() ||
         !connection["address"].isString() || !connection["username"].isString() ||
         !connection["folderId"].isString()) throw std::runtime_error("Invalid computer entry");
+    vpnProfiles::validateAssociation(connection["vpn"]);
     auto id = connection["id"].asString();
     text(id, "computer identifier", 64);
     text(connection["name"].asString(), "computer name", 256);
@@ -165,7 +167,7 @@ std::string ConnectionStore::saveFolder(const std::string& id, const std::string
 }
 std::string ConnectionStore::saveConnection(const std::string& id, const std::string& name,
   const std::string& address, const std::string& username, const std::string& folder,
-  PasswordChange change, const std::string& password, const std::string& sessionMode) {
+  PasswordChange change, const std::string& password, const std::string& sessionMode, const Json::Value& vpn) {
   auto document = read();
   int index = id.empty() ? -1 : indexOf(document["connections"], id);
   auto siblings = children(document, folder);
@@ -174,6 +176,7 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
   std::string result = id.empty() ? CredentialVault::newId() : id;
   entry["id"] = result; entry["name"] = trim(name); entry["address"] = trim(address);
   entry["username"] = username; entry["folderId"] = folder;
+  if (!vpn.isNull()) { vpnProfiles::validateAssociation(vpn); entry["vpn"] = vpn; }
   if (!sessionMode.empty()) entry["sessionMode"] = sessionMode;
   else if (entry["sessionMode"].isNull()) entry["sessionMode"] = "current-screen";
   std::string host; int port;

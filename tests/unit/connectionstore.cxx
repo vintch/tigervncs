@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <gtest/gtest.h>
 #include "ConnectionStore.h"
+#include "VpnProfiles.h"
 #include "ConnectionTree.h"
 #include <cstdio>
 #include <fstream>
@@ -270,4 +271,29 @@ TEST_F(ConnectionStoreTest, UserSessionCannotProceedWithoutSavedCredentials) {
   EXPECT_THROW(store.prepareConnection(id, "127.0.0.1", credentials, "user-session"), std::runtime_error);
   EXPECT_FALSE(ConnectionStore::activeCredentials("127.0.0.1", 5900, credentials));
   EXPECT_EQ(store.connection(id)["sessionMode"], "current-screen");
+}
+
+TEST(VpnProfilesTest, ParsesIdsAndLiteralNamesWithoutPersistingCredentials) {
+  auto profiles = vpnProfiles::parseOpenVpn(R"([{"id":"b","name":"Z/path","username":"secret"},{"id":"a","name":"A"},{"id":"a","name":"duplicate"}])");
+  ASSERT_EQ(profiles.size(), 2); EXPECT_EQ(profiles[0].id, "a"); EXPECT_EQ(profiles[1].name, "Z/path");
+  EXPECT_THROW(vpnProfiles::parseOpenVpn(R"({"status":"error"})"), std::runtime_error);
+  EXPECT_THROW(vpnProfiles::parseOpenVpn(R"([{"name":"missing id"}])"), std::runtime_error);
+  EXPECT_THROW(vpnProfiles::parseOpenVpn("[] trailing"), std::runtime_error);
+  EXPECT_THROW(vpnProfiles::parseOpenVpn(R"([{"id":"a","name":"line\nname"}])"), std::runtime_error);
+}
+TEST(VpnProfilesTest, WireGuardConfigurationSuffixes) {
+  EXPECT_EQ(vpnProfiles::wireGuardName("Office.conf.dpapi"), "Office");
+  EXPECT_EQ(vpnProfiles::wireGuardName("Office.CONF"), "Office");
+  EXPECT_EQ(vpnProfiles::wireGuardName("Office.conf.backup"), "");
+}
+TEST_F(ConnectionStoreTest, VpnAssociationRoundtripAndInvalidUpdateIsAtomic) {
+  ConnectionStore store(path);
+  Json::Value vpn(Json::objectValue); vpn["enabled"] = true; vpn["provider"] = "openvpn"; vpn["profileId"] = "profile-id";
+  auto id = store.saveConnection("", "Computer", "localhost", "user", "", ConnectionStore::SetPassword, "password", "current-screen", vpn);
+  EXPECT_EQ(store.connection(id)["vpn"], vpn);
+  store.saveConnection(id, "Renamed", "localhost", "user", "", ConnectionStore::KeepPassword, "");
+  EXPECT_EQ(store.connection(id)["vpn"], vpn);
+  auto before = store.read(); vpn["profileId"] = "";
+  EXPECT_THROW(store.saveConnection(id,"Broken","localhost","user","",ConnectionStore::ForgetPassword,"","current-screen",vpn),std::runtime_error);
+  EXPECT_EQ(store.read(), before);
 }

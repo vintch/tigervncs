@@ -9,6 +9,8 @@ add_executable(vncviewer
   ConnectionTree.cxx
   PresenceMonitor.cxx
   PresencePing.cxx
+  NetworkSettings.cxx
+  VpnProfiles.cxx
   CredentialVault.cxx
   fltk/Fl_Monitor_Arrangement.cxx
   fltk/Fl_Suggestion_Item_.cxx
@@ -33,6 +35,8 @@ add_executable(vncviewer
   touch.cxx
   MonitorIndicesParameter.cxx
   vncviewer.cxx)
+
+set_target_properties(vncviewer PROPERTIES OUTPUT_NAME TigerVNCs)
 
 if(WIN32 AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   set_target_properties(vncviewer PROPERTIES WIN32_EXECUTABLE TRUE)

@@ -405,3 +405,16 @@ int main(int argc, char** argv)
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+TEST(EmulateMB, ResetDropsPendingClickBeforeReconnection) {
+  TestClass test; emulateMiddleButton.setParam(true);
+  test.filterPointerEvent({0, 10}, left);
+  test.resetEmulation(); test.results.clear();
+  usleep(100000); core::Timer::checkTimeouts();
+  EXPECT_TRUE(test.results.empty());
+  test.filterPointerEvent({5, 20}, right);
+  test.filterPointerEvent({5, 20}, empty);
+  ASSERT_EQ(test.results.size(), 3);
+  EXPECT_EQ(test.results[0].mask, empty);
+  EXPECT_EQ(test.results[1].mask, right); EXPECT_EQ(test.results[2].mask, empty);
+}

@@ -4,8 +4,6 @@
 #include <core/Timer.h>
 #include <algorithm>
 
-static const int connectionTimeoutMs = 4000;
-
 // Human decisions do not consume the network establishment deadline.
 class PauseConnectionTimeout {
 public:

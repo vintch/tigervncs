@@ -19,6 +19,7 @@
 
 #ifndef __VIEWPORT_H__
 #define __VIEWPORT_H__
+#include <memory>
 
 #include <core/Rect.h>
 
@@ -35,6 +36,7 @@ class CConn;
 class Keyboard;
 class PlatformPixelBuffer;
 class Surface;
+namespace rfb { class ModifiablePixelBuffer; }
 
 class Viewport : public Fl_Widget, protected EmulateMB,
                  protected KeyboardHandler {
@@ -55,6 +57,15 @@ public:
   void draw(Surface* dst);
 
   void resizeFramebuffer(int w, int h);
+  void setConnection(CConn* connection) { cc = connection; }
+  void freezeFramebuffer(rfb::ModifiablePixelBuffer* buffer);
+  void attachFramebuffer(int width, int height);
+  void commitFramebuffer();
+  bool frozen() const { return bool(frozenBuffer); }
+  core::Point displayedSize() const;
+#ifdef TIGERVNCS_SESSION_TEST
+  uint32_t displayedPixel() const;
+#endif
   core::Point desktopToWindow(const core::Point& pos) const;
 
   // Clipboard events
@@ -111,6 +122,7 @@ private:
   CConn* cc;
 
   PlatformPixelBuffer* frameBuffer;
+  std::unique_ptr<PlatformPixelBuffer> frozenBuffer;
   Surface* scaledBuffer;
   bool scaledBufferDirty;
 

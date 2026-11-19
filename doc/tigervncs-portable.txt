@@ -53,7 +53,7 @@ failures/timeouts turn it blue. One success resets the failure streak. Blue
 means no recent ICMP confirmation, not necessarily a VNC service failure.
 
 ICMP waits at most three seconds. DNS and ICMP execute away from the UI, with
-at most four workers process-wide. Closing a folder/list cancels unsent work;
+a bounded worker pool (four by default, at most 64 with longer timeouts). Closing a folder/list cancels unsent work;
 late results cannot update hidden, deleted or edited entries. No worker owns a
 window or tree pointer, and closing the dialog never joins network workers.
 Native operation buffers remain alive until Windows finishes the request.
@@ -77,22 +77,34 @@ When editing, a blank password preserves an existing saved password. Enter
 a replacement to change it, or uncheck Save password to remove it. Passwords
 are not decrypted merely to edit a name or folder. Failed key unlocks are
 reported; the program never silently regenerates a missing or damaged key.
-Connection history also stays in this JSON; legacy registry history is read
-only as an initial fallback.
+All general preferences, network and VPN paths, history, last server, saved
+computers, passwords, folder state and certificate exceptions stay in this
+JSON. On first launch after this upgrade, legacy registry preferences/history
+are read once; existing JSON values take priority. settingsMigrated records
+completion. No registry values are written or removed. Save as is no longer
+shown; Load can still import an old .tigervnc file. No log file or state
+folders are created outside the executable directory.
 
 Connection recovery
 -------------------
-Outgoing Windows connections have a four-second establishment deadline,
-including hostname lookup, TCP connection and the RFB handshake. Waiting for
-the user to enter credentials or approve a certificate pauses that deadline.
-It does not limit the duration of an established session or idle time.
+Options / Network configures connection establishment timeout (default 4s),
+active session response timeout (default 4s), ICMP reply timeout (default 3s),
+ping period per computer (default 3s), minimum packet interval (default 1s),
+and Enable ping. These are stored under viewer in tigervncs.json.
 
-An unsuccessful attempt shows Retry and Cancel. Retry starts a fresh attempt
-at the same address. Cancel returns to the initial connection window. Closing
-the remote desktop, cancelling authentication or losing an established session
-also returns to that window. Session sockets, timers and credential bindings
-are discarded before returning. Only closing/cancelling the initial window
-ends the application. Legacy ReconnectOnError no longer disables recovery.
+The establishment deadline includes DNS, TCP and the RFB handshake; entering
+credentials or approving certificates pauses it. An initial failure offers
+Retry and Cancel. Cancel or closing the desktop returns to the initial window.
+
+Established sessions recover silently after a network error or response stall.
+The same desktop window and last complete image remain until fresh pixels
+arrive. Credentials and the one-attempt session mode are retained in memory;
+recovery does not prompt again. A quiet screen is valid: a tiny nonincremental
+RFB request checks it before declaring a stall. Continuous byte progress keeps
+slow frames alive even when their full transfer exceeds the response timeout.
+No ICMP requests are sent while a session or its recovery is active. Pending
+mouse buttons and timers are cleared before replacing the connection.
+Only closing/cancelling the initial window ends the application.
 
 Only the client-side image is scaled. This does not reduce the remote desktop's
 resolution or by itself reduce network traffic.
@@ -120,7 +132,7 @@ macOS may reuse an existing desktop for the account, including its console
 desktop if that same account is already active there.
 
 Connect and double-click use the saved mode. A computer's context menu also
-offers Connect to / User personal session and Connect to / Current session.
+offers Connect to / User session and Connect to / Current screen.
 These are one-attempt overrides; they do not edit the saved preference. Retry
 keeps the selected mode, and returning to the main window clears the override.
 
@@ -129,3 +141,22 @@ or denied User session requests report an error rather than silently sharing
 the console. Ordinary non-Apple Current screen connections retain standard RFB.
 No new macOS accounts are created, no logout is requested, and the stored
 credential key and ciphertext are preserved when only the mode is edited.
+
+VPN profile associations (mod 1.0)
+---------------------------------
+Options / VPN configures OpenVPNConnectExecutable (default C:\Program Files\
+OpenVPN Connect\OpenVPNConnect.exe) and WireGuardConfigurationDirectory
+(default C:\Program Files\WireGuard\Data\Configurations).
+At startup and after changing these paths, a background worker enumerates
+Wireguard .conf/.conf.dpapi filenames and runs the exact configured OpenVPN
+Connect executable with --list-profiles. The CLI has a four-second deadline,
+a bounded output buffer, and no shell. Profile credentials are not imported.
+CLI reference: https://openvpn.net/connect-docs/command-line-functionality-windows/
+
+The computer editor has Associate VPN-Connection, provider and profile choices.
+Each connection stores vpn: {enabled, provider, profileId}. OpenVPN uses the
+stable profile ID; Wireguard uses the name without .conf/.conf.dpapi. Unavailable
+saved profiles remain selectable and are marked unavailable. Missing clients,
+access-denied folders and CLI failures leave the UI usable and are explained
+in the profile tooltip. Profile discovery never activates or disconnects a VPN.
+The standalone output artifact is dist/TigerVNCs.exe.

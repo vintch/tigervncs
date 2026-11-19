@@ -197,7 +197,7 @@ static const signed char stateTab[11][5][3] = {
 };
 
 EmulateMB::EmulateMB()
-  : state(0), emulatedButtonMask(0), timer(this)
+  : state(0), emulatedButtonMask(0), lastButtonMask(0), timer(this)
 {
 }
 
@@ -336,4 +336,9 @@ int EmulateMB::createButtonMask(uint16_t buttonMask)
 
   // Set the left and right buttons according to the action
   return buttonMask |= emulatedButtonMask;
+}
+
+void EmulateMB::resetEmulation() {
+  timer.stop(); state = 0; emulatedButtonMask = lastButtonMask = 0;
+  lastPos = origPos = core::Point(0, 0);
 }

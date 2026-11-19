@@ -84,6 +84,8 @@ namespace rfb {
     // anyone else. Call setFramebuffer again with NULL or a different
     // PixelBuffer to delete the previous one.
     void setFramebuffer(ModifiablePixelBuffer* fb);
+    // Transfer a frozen framebuffer to the viewer while replacing a connection.
+    ModifiablePixelBuffer* releaseFramebuffer();
 
     // initialiseProtocol() should be called once the streams and security
     // types are set.  Subsequently, processMsg() should be called whenever

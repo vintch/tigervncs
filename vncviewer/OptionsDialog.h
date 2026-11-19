@@ -32,6 +32,7 @@ class Fl_Toggle_Button;
 class Fl_Input;
 class Fl_Int_Input;
 class Fl_Choice;
+class Fl_Spinner;
 class Fl_Monitor_Arrangement;
 
 typedef void (OptionsCallback)(void*);
@@ -61,6 +62,8 @@ protected:
   void createShortcutsPage(int tx, int ty, int tw, int th);
   void createDisplayPage(int tx, int ty, int tw, int th);
   void createMiscPage(int tx, int ty, int tw, int th);
+  void createVpnPage(int tx, int ty, int tw, int th);
+  void createNetworkPage(int tx, int ty, int tw, int th);
 
   static void handleAutoselect(Fl_Widget *widget, void *data);
   static void handleCompression(Fl_Widget *widget, void *data);
@@ -174,6 +177,10 @@ protected:
   /* Misc. */
   Fl_Check_Button *sharedCheckbox;
   Fl_Check_Button *reconnectCheckbox;
+  Fl_Input *openVpnPathInput, *wireGuardPathInput;
+  Fl_Check_Button* pingEnabledCheckbox;
+  Fl_Spinner *connectTimeoutSpinner, *sessionTimeoutSpinner, *pingTimeoutSpinner,
+             *pingPeriodSpinner, *pingMinimumSpinner;
 #ifdef HAVE_AUDIO
   Fl_Check_Button *audioCheckbox;
 #endif

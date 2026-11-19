@@ -292,6 +292,7 @@ DesktopWindow::~DesktopWindow()
 
 void DesktopWindow::updateCaption()
 {
+  if (!cc || viewport->frozen()) return;
   const size_t maxLen = 100;
   std::string windowName;
   const char *labelFormat;
@@ -301,9 +302,9 @@ void DesktopWindow::updateCaption()
   // FIXME: All of this consideres bytes, not characters
 
   if (keyboardGrabbed)
-    labelFormat = _("%s - TigerVNC (keyboard grabbed)");
+    labelFormat = _("%s - TigerVNCs (keyboard grabbed)");
   else
-    labelFormat = _("%s - TigerVNC");
+    labelFormat = _("%s - TigerVNCs");
 
   // Ignore the length of '%s' since it is
   // a format marker which won't take up space
@@ -340,6 +341,35 @@ void DesktopWindow::updateCaption()
 // Copy the areas of the framebuffer that have been changed (damaged)
 // to the displayed window.
 
+void DesktopWindow::setConnection(CConn* connection)
+{
+  cc = connection; viewport->setConnection(connection);
+  statsLastUpdates = statsLastPixels = statsLastPosition = 0;
+  gettimeofday(&statsLastTime, nullptr);
+}
+
+void DesktopWindow::freezeFramebuffer(rfb::ModifiablePixelBuffer* framebuffer)
+{
+  viewport->freezeFramebuffer(framebuffer);
+  cc = nullptr;
+  Fl::remove_timeout(handleResizeTimeout, this);
+}
+
+void DesktopWindow::attachFramebuffer(int width, int height)
+{
+  viewport->attachFramebuffer(width, height);
+}
+
+void DesktopWindow::commitFramebuffer()
+{
+  pendingRemoteResize = false;
+  viewport->commitFramebuffer();
+  repositionWidgets(); updateCaption();
+}
+#ifdef TIGERVNCS_SESSION_TEST
+uint32_t DesktopWindow::displayedPixel() const { return viewport->displayedPixel(); }
+#endif
+
 void DesktopWindow::updateWindow()
 {
   if (firstUpdate) {
@@ -353,6 +383,7 @@ void DesktopWindow::updateWindow()
 
 void DesktopWindow::resizeFramebuffer(int new_w, int new_h)
 {
+  if (viewport->frozen()) { viewport->resizeFramebuffer(new_w, new_h); return; }
   bool maximized;
 
   maximized = false;
@@ -1280,6 +1311,7 @@ void DesktopWindow::reconfigureFullscreen(void* /*data*/)
 
 void DesktopWindow::remoteResize()
 {
+  if (!cc || viewport->frozen()) return;
   int width, height;
   rfb::ScreenSet layout;
   rfb::ScreenSet::const_iterator iter;
@@ -1485,7 +1517,8 @@ void DesktopWindow::repositionWidgets()
 {
   int new_x, new_y;
 
-  core::Point display = fitDesktop(cc->server.width(), cc->server.height(),
+  auto dimensions = viewport->displayedSize();
+  core::Point display = fitDesktop(dimensions.x, dimensions.y,
                                    w(), h(), scaleToWindow);
   bool displayResized = viewport->w() != display.x || viewport->h() != display.y;
   viewport->size(display.x, display.y);
@@ -1690,6 +1723,9 @@ void DesktopWindow::handleEdgeScroll(void *data)
 void DesktopWindow::handleStatsTimeout(void *data)
 {
   DesktopWindow *self = (DesktopWindow*)data;
+  if (!self->cc || self->viewport->frozen()) {
+    Fl::repeat_timeout(0.5, handleStatsTimeout, data); return;
+  }
 
   const size_t statsCount = sizeof(self->stats)/sizeof(self->stats[0]);
 

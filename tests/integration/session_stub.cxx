@@ -2,6 +2,9 @@
 // Only modal decisions are stubbed. The actual socket, protocol handshake,
 // watchdog, teardown and outer application loop are used by the test viewer.
 #include "ConnectionStore.h"
+#include "PresenceMonitor.h"
+#include "vncviewer.h"
+#include <FL/Fl.H>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
@@ -37,4 +40,26 @@ void returnedToMainWindowStub() {
   result["event"] = "main-window";
   result["credentialsCleared"] = !ConnectionStore::activeCredentials("127.0.0.1", 5900, credentials);
   event(result);
+}
+
+void sessionWindowStub(const char* kind, const void* window, uint32_t pixel, bool reused) {
+  Json::Value result;
+  result["event"] = kind; result["window"] = Json::UInt64(reinterpret_cast<uintptr_t>(window));
+  result["pixel"] = Json::UInt(pixel); result["reused"] = reused;
+  result["presenceSuspended"] = presenceSuspended();
+  event(result);
+  if (std::string(kind) == "frame" && reused) disconnect();
+  if (std::string(kind) == "frame" && !reused && std::getenv("VNC_TEST_CLOSE_IDLE"))
+    Fl::add_timeout(6.2, [](void*) { disconnect(); });
+}
+
+// UI smoke mode shows Options without a disabled owner window, allowing the
+// same dialog to be inspected by Windows accessibility tools.
+#include "OptionsDialog.h"
+#include <FL/Fl.H>
+bool optionsUiStub() {
+  if (!std::getenv("VNC_TEST_OPTIONS_UI")) return false;
+  OptionsDialog::showDialog();
+  while (Fl::first_window()) Fl::wait();
+  return true;
 }

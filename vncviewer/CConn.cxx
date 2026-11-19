@@ -66,6 +66,13 @@
 #include "AuthDialog.h"
 #include "ConnectionStore.h"
 #include "ConnectionTimeout.h"
+#include "PresenceMonitor.h"
+#include "NetworkSettings.h"
+#ifdef HAVE_GNUTLS
+#include <gnutls/crypto.h>
+#endif
+#include <atomic>
+#include <thread>
 #include "CConn.h"
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
@@ -93,14 +100,25 @@ static const rfb::PixelFormat reducedColourPF(16, 16, false, true,
 // Time new bandwidth estimates are weighted against (in ms)
 static const unsigned bpsEstimateWindow = 1000;
 
-CConn::CConn()
+struct CConn::PendingConnect {
+  std::atomic<bool> done{false};
+  std::unique_ptr<network::Socket> socket;
+  std::string error;
+};
+static std::atomic<unsigned> connectionWorkers{0};
+
+CConn::CConn(DesktopWindow* retained, const ConnectionCredentials* credentials)
   : serverPort(0), sock(nullptr),
     msgTimer(this, &CConn::processNextMsg),
-    connectionTimer(this, &CConn::connectionTimedOut), desktop(nullptr),
+    connectionTimer(this, &CConn::connectionTimedOut),
+    sessionTimer(this, &CConn::checkSession), connectPollTimer(this, &CConn::checkConnect), desktop(retained),
     audioOutput(nullptr),
     updateCount(0), pixelCount(0),
     lastServerEncoding((unsigned int)-1), bpsEstimate(20000000)
 {
+  recovering = retained != nullptr;
+  if (credentials) recoveryCredentials = *credentials;
+  if (desktop) desktop->setConnection(this);
   setShared(::shared);
 
   supportsLocalCursor = true;
@@ -129,8 +147,12 @@ CConn::CConn()
 CConn::~CConn()
 {
   connectionTimer.stop();
-  OptionsDialog::hideDialogs();
-  OptionsDialog::setServerProfile(false, -1);
+  sessionTimer.stop();
+  connectPollTimer.stop(); pendingConnect.reset();
+  if (!fastClose) {
+    OptionsDialog::hideDialogs();
+    OptionsDialog::setServerProfile(false, -1);
+  }
   close();
 
   OptionsDialog::removeCallback(handleOptions);
@@ -140,6 +162,10 @@ CConn::~CConn()
     delete desktop;
 
   delete audioOutput;
+
+  if (fastClose && sock) {
+    Fl::remove_fd(sock->getFd()); delete sock; sock = nullptr;
+  }
 
   if (sock) {
     struct timeval now;
@@ -182,7 +208,8 @@ CConn::~CConn()
 
 void CConn::connect(const char* vncServerName, network::Socket* socket)
 {
-  connectionTimer.start(connectionTimeoutMs);
+  suspendPresence();
+  connectionTimer.start(networkSettings::connectTimeoutMs());
   sock = socket;
   if(sock == nullptr) {
     try {
@@ -196,21 +223,68 @@ void CConn::connect(const char* vncServerName, network::Socket* socket)
       {
         network::getHostAndPort(vncServerName, &serverHost, &serverPort);
         ConnectionCredentials profile;
-        ConnectionStore::activeCredentials(serverHost, serverPort, profile);
+        if (recovering) profile.sessionMode = recoveryCredentials.sessionMode;
+        else ConnectionStore::activeCredentials(serverHost, serverPort, profile);
+        recoveryCredentials.sessionMode = profile.sessionMode;
         setAppleSessionMode(profile.sessionMode == "user-session" ? 2 : 1);
 
-        sock = new network::TcpSocket(serverHost.c_str(), serverPort, connectionTimeoutMs);
-        vlog.info(_("Connected to host %s port %d"),
-                  serverHost.c_str(), serverPort);
+        // DNS and TCP establishment cannot freeze an existing window while
+        // recovering, even if the user chose a long connection timeout.
+        network::initSockets();
+        auto pending = std::make_shared<PendingConnect>();
+        auto host = serverHost; auto port = serverPort;
+        int timeout = networkSettings::connectTimeoutMs();
+        if (connectionWorkers.fetch_add(1) >= 2) {
+          connectionWorkers.fetch_sub(1);
+          throw std::runtime_error("Previous network connection attempts are still finishing");
+        }
+        try {
+          std::thread([pending, host, port, timeout] {
+            try { pending->socket.reset(new network::TcpSocket(host.c_str(), port, timeout)); }
+            catch (std::exception& e) { pending->error = e.what(); }
+            catch (...) { pending->error = "Network connection failed"; }
+            connectionWorkers.fetch_sub(1);
+            pending->done.store(true, std::memory_order_release);
+          }).detach();
+        } catch (...) { connectionWorkers.fetch_sub(1); throw; }
+        pendingConnect = pending;
+        connectPollTimer.start(20);
+        return;
       }
     } catch (std::exception& e) {
       vlog.error("%s", e.what());
+      if (recovering) { reconnect_connection(e.what()); return; }
       abort_connection(_("Failed to connect to \"%s\":\n\n%s"),
                        vncServerName, e.what());
       return;
     }
   }
 
+  finishConnect();
+}
+
+void CConn::checkConnect(core::Timer*)
+{
+  if (!pendingConnect) return;
+  if (!pendingConnect->done.load(std::memory_order_acquire)) { connectPollTimer.repeat(20); return; }
+  auto pending = pendingConnect; pendingConnect.reset();
+  if (!pending->error.empty()) {
+    if (recovering) reconnect_connection(pending->error.c_str());
+    else abort_connection(_("Failed to connect to %s:\n\n%s"), serverHost.c_str(), pending->error.c_str());
+    return;
+  }
+  sock = pending->socket.release();
+  try {
+    vlog.info(_("Connected to host %s port %d"), serverHost.c_str(), serverPort);
+    finishConnect();
+  } catch (std::exception& e) {
+    if (recovering) reconnect_connection(e.what());
+    else abort_connection_unexpected(e);
+  }
+}
+
+void CConn::finishConnect()
+{
   Fl::add_fd(sock->getFd(), FL_READ | FL_EXCEPT, socketEvent, this);
 
   setServerName(serverHost.c_str());
@@ -315,14 +389,17 @@ void CConn::processNextMsg(core::Timer*)
     again = processMsg();
   } catch (rdr::end_of_stream& e) {
     vlog.info("%s", e.what());
-    if (!desktop) {
+    if (desktop) {
+      reconnect_connection(_("The server closed the connection unexpectedly."));
+    } else {
       vlog.error(_("The connection was dropped by the server before "
                    "the session could be established."));
       abort_connection(_("The connection was dropped by the server "
                        "before the session could be established."));
-    } else {
-      abort_connection(_("The server closed the connection unexpectedly."));
     }
+  } catch (core::socket_error& e) {
+    if (desktop) reconnect_connection(e.what());
+    else abort_connection_unexpected(e);
   } catch (rfb::auth_cancelled& e) {
     vlog.info("%s", e.what());
     disconnect();
@@ -365,7 +442,54 @@ void CConn::clearSavedCredentials()
 
 void CConn::connectionTimedOut(core::Timer*)
 {
-  abort_connection(_("The connection timed out after 4 seconds."));
+  auto error = core::format(_("The connection timed out after %d seconds."), int(networkSettings::connectTimeout));
+  if (recovering) reconnect_connection(error.c_str());
+  else abort_connection("%s", error.c_str());
+}
+
+DesktopWindow* CConn::releaseDesktopForReconnect()
+{
+  connectionTimer.stop(); sessionTimer.stop(); msgTimer.stop(); connectPollTimer.stop(); pendingConnect.reset();
+  Fl::remove_timeout(handleUpdateTimeout, this);
+  if (sock) Fl::remove_fd(sock->getFd());
+  fastClose = true;
+  auto window = desktop;
+  if (window) window->freezeFramebuffer(releaseFramebuffer());
+#ifdef TIGERVNCS_SESSION_TEST
+  extern void sessionWindowStub(const char*, const void*, uint32_t, bool);
+  if (window) sessionWindowStub("frozen", window, window->displayedPixel(), true);
+#endif
+  desktop = nullptr;
+  return window;
+}
+
+void CConn::checkSession(core::Timer*)
+{
+  if (!sock || state() != RFBSTATE_NORMAL) return;
+  try {
+    auto now = pingClockMs();
+    liveness.progress(now, sock->inStream().pos() + sock->inStream().avail());
+    auto action = liveness.check(now);
+    if (action == SessionLiveness::Reconnect) {
+      auto error = core::format(_("The active session stopped responding for %d seconds."), int(networkSettings::sessionTimeout));
+      reconnect_connection(error.c_str());
+      return;
+    }
+    if (action == SessionLiveness::Probe) {
+      // An incremental request may legitimately wait on an unchanged desktop.
+      // A non-incremental one-pixel RFB request always has an answer; no ICMP.
+      writer()->writeFramebufferUpdateRequest({0, 0, 1, 1}, false);
+      getOutStream()->cork(false);
+    }
+    sessionTimer.repeat(250);
+  } catch (std::exception& e) { reconnect_connection(e.what()); }
+}
+
+void CConn::rememberCredentials(const std::string* user, const std::string* password)
+{
+  recoveryCredentials.username = user ? *user : "";
+  CredentialVault::erase(recoveryCredentials.password);
+  recoveryCredentials.password = *password; recoveryCredentials.hasPassword = true;
 }
 
 void CConn::getUserPasswd(std::string *user, std::string *password)
@@ -375,6 +499,13 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
   int ret_val;
 
   assert(password);
+  if (recovering) {
+    if (!recoveryCredentials.hasPassword || (user && recoveryCredentials.username.empty()))
+      throw rfb::auth_cancelled();
+    if (user) *user = recoveryCredentials.username;
+    *password = recoveryCredentials.password;
+    return;
+  }
   ConnectionCredentials credentials;
   bool savedProfile = ConnectionStore::activeCredentials(serverHost, serverPort, credentials);
   if (credentials.sessionMode == "user-session" && (!savedProfile || !credentials.hasPassword))
@@ -382,6 +513,7 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
   if (savedProfile && credentials.hasPassword) {
     if (user) *user = credentials.username;
     *password = credentials.password;
+    rememberCredentials(user, password);
     return;
   }
   char *envUsername = getenv("VNC_USERNAME");
@@ -390,22 +522,26 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
   if(!savedProfile && user && envUsername && envPassword) {
     *user = envUsername;
     *password = envPassword;
+    rememberCredentials(user, password);
     return;
   }
 
   if (!savedProfile && !user && envPassword) {
     *password = envPassword;
+    rememberCredentials(user, password);
     return;
   }
 
   if (!savedProfile && user && !savedUsername.empty() && !savedPassword.empty()) {
     *user = savedUsername;
     *password = savedPassword;
+    rememberCredentials(user, password);
     return;
   }
 
   if (!savedProfile && !user && !savedPassword.empty()) {
     *password = savedPassword;
+    rememberCredentials(user, password);
     return;
   }
 
@@ -424,6 +560,7 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
 
     *password = rfb::deobfuscate(obfPwd.data(), obfPwd.size());
 
+    rememberCredentials(user, password);
     return;
   }
 
@@ -454,6 +591,7 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
 
   if (ret_val != 1)
     throw rfb::auth_cancelled();
+  rememberCredentials(user, password);
 }
 
 // initDone() is called when the serverInit message has been received.  At
@@ -463,7 +601,18 @@ void CConn::initDone()
 {
   connectionTimer.stop();
   OptionsDialog::setServerProfile(isAppleServer(), -1);
-  desktop = new DesktopWindow(server.width(), server.height(), this);
+#ifdef TIGERVNCS_SESSION_TEST
+  bool reused = desktop != nullptr;
+#endif
+  if (desktop) desktop->attachFramebuffer(server.width(), server.height());
+  else desktop = new DesktopWindow(server.width(), server.height(), this);
+#ifdef TIGERVNCS_SESSION_TEST
+  extern void sessionWindowStub(const char*, const void*, uint32_t, bool);
+  sessionWindowStub("attached", desktop, desktop->displayedPixel(), reused);
+#endif
+  liveness.start(pingClockMs(), sock->inStream().pos() + sock->inStream().avail());
+  liveness.configure(networkSettings::sessionTimeoutMs());
+  sessionTimer.start(250);
 
   // Force a switch to the format and encoding we'd like
   updateEncoding();
@@ -547,12 +696,25 @@ bool CConn::verifyCertificate(unsigned int status,
   cert_datum.data = (uint8_t*)certificate;
   cert_datum.size = length;
 
-  known = gnutls_verify_stored_pubkey(dbPath.c_str(), nullptr,
-                                      getServerName(), nullptr,
-                                      GNUTLS_CRT_X509, &cert_datum, 0);
+  unsigned char digest[32];
+  if (gnutls_hash_fast(GNUTLS_DIG_SHA256, certificate, length, digest) < 0)
+    throw std::runtime_error("Cannot fingerprint server certificate");
+  std::string fingerprint;
+  const char hex[] = "0123456789abcdef";
+  for (auto octet : digest) { fingerprint += hex[octet >> 4]; fingerprint += hex[octet & 15]; }
+  PortableConfig trustFile(PortableConfig::executablePath());
+  auto trustDocument = trustFile.read();
+  const auto& saved = trustDocument["certificateExceptions"][getServerName()];
+  if (saved.isString()) known = saved.asString() == fingerprint ? GNUTLS_E_SUCCESS : GNUTLS_E_CERTIFICATE_KEY_MISMATCH;
+  else known = gnutls_verify_stored_pubkey(dbPath.c_str(), nullptr,
+                                         getServerName(), nullptr, GNUTLS_CRT_X509, &cert_datum, 0);
 
   /* Previously known? */
   if (known == GNUTLS_E_SUCCESS) {
+    if (saved.isNull()) {
+      trustDocument["certificateExceptions"][getServerName()] = fingerprint;
+      trustFile.write(trustDocument);
+    }
     vlog.info(_("Server has an existing security exception"));
     return true;
   }
@@ -799,11 +961,10 @@ bool CConn::verifyCertificate(unsigned int status,
     }
   }
 
-  if (gnutls_store_pubkey(dbPath.c_str(), nullptr,
-                          getServerName(), nullptr,
-                          GNUTLS_CRT_X509, &cert_datum, 0, 0))
-    vlog.error(_("Failed to store server certificate to list of "
-                 "servers with a security exception"));
+  // Re-read so other settings saved while the certificate prompt was open survive.
+  trustDocument = trustFile.read();
+  trustDocument["certificateExceptions"][getServerName()] = fingerprint;
+  trustFile.write(trustDocument);
 
   vlog.info(_("Security exception added for server host"));
 
@@ -857,6 +1018,7 @@ void CConn::setName(const char* name)
 // one.
 void CConn::framebufferUpdateStart()
 {
+  liveness.frameStarted();
   CConnection::framebufferUpdateStart();
 
   // For bandwidth estimate
@@ -877,6 +1039,21 @@ void CConn::framebufferUpdateEnd()
   struct timeval now;
 
   CConnection::framebufferUpdateEnd();
+  liveness.frameCompleted(pingClockMs());
+  bool wasRecovering = recovering;
+  if (recovering && freshPixels) {
+    desktop->commitFramebuffer(); recovering = false;
+    vlog.info("Automatic reconnection completed with a fresh framebuffer");
+  }
+#ifdef TIGERVNCS_SESSION_TEST
+  if (freshPixels && !reportedFirstFrame) {
+    extern void sessionWindowStub(const char*, const void*, uint32_t, bool);
+    sessionWindowStub("frame", desktop, desktop->displayedPixel(), wasRecovering);
+  }
+#else
+  (void)wasRecovering;
+#endif
+  if (freshPixels) reportedFirstFrame = true;
 
   updateCount++;
 
@@ -929,8 +1106,10 @@ bool CConn::dataRect(const core::Rect& r, int encoding)
 
   ret = CConnection::dataRect(r, encoding);
 
-  if (ret)
+  if (ret) {
     pixelCount += r.area();
+    if (r.area() && encoding >= 0) freshPixels = true;
+  }
 
   return ret;
 }
@@ -1094,6 +1273,8 @@ void CConn::updatePixelFormat()
 void CConn::handleOptions(void *data)
 {
   CConn *self = (CConn*)data;
+  self->liveness.configure(networkSettings::sessionTimeoutMs());
+  if (self->state() != RFBSTATE_NORMAL) return;
 
   self->updateEncoding();
   self->updateCompressLevel();

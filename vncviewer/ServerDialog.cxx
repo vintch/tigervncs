@@ -62,7 +62,7 @@ static core::LogWriter vlog("ServerDialog");
 const char* SERVER_HISTORY="tigervnc.history";
 
 ServerDialog::ServerDialog()
-  : Fl_Window(450, 0, "TigerVNC")
+  : Fl_Window(450, 0, "TigerVNCs")
 {
   int x, y, x2;
   Fl_Button *button;
@@ -89,10 +89,6 @@ ServerDialog::ServerDialog()
   button->callback(this->handleLoad, this);
   x2 += BUTTON_WIDTH + INNER_MARGIN;
 
-  button = new Fl_Button(x2, y, BUTTON_WIDTH, BUTTON_HEIGHT, _("Save as..."));
-  button->callback(this->handleSaveAs, this);
-  x2 += BUTTON_WIDTH + INNER_MARGIN;
-
   y += BUTTON_HEIGHT + INNER_MARGIN;
 
   divider = new Fl_Box(0, y, w(), 2);
@@ -104,7 +100,7 @@ ServerDialog::ServerDialog()
   y += OUTER_MARGIN - INNER_MARGIN;
 
   button = new Fl_Button(x, y, BUTTON_HEIGHT, BUTTON_HEIGHT, "?");
-  button->tooltip(_("About TigerVNC"));
+  button->tooltip(_("About TigerVNCs"));
   button->callback(this->handleAbout, this);
 
   managerButton = new Fl_Button(x + BUTTON_HEIGHT + INNER_MARGIN, y,
@@ -145,6 +141,7 @@ std::string ServerDialog::run(const char* servername)
 {
   ServerDialog dialog;
   ConnectionStore::clearActive();
+  resumePresence();
 #ifdef TIGERVNCS_SESSION_TEST
   extern void returnedToMainWindowStub();
   returnedToMainWindowStub();
@@ -193,9 +190,9 @@ void ServerDialog::handleLoad(Fl_Widget* /*widget*/, void* data)
     dialog->usedDir = core::getuserhomedir();
 
   Fl_File_Chooser* file_chooser = new Fl_File_Chooser(dialog->usedDir.c_str(),
-                                                      _("TigerVNC configuration (*.tigervnc)"),
+                                                      _("TigerVNCs configuration (*.tigervnc)"),
                                                       Fl_File_Chooser::SINGLE,
-                                                      _("Select a TigerVNC configuration file"));
+                                                      _("Select a TigerVNCs configuration file"));
   file_chooser->preview(0);
   file_chooser->previewButton->hide();
   file_chooser->show();
@@ -221,68 +218,6 @@ void ServerDialog::handleLoad(Fl_Widget* /*widget*/, void* data)
              e.what());
   }
 
-  delete(file_chooser);
-}
-
-
-void ServerDialog::handleSaveAs(Fl_Widget* /*widget*/, void* data)
-{ 
-  ServerDialog *dialog = (ServerDialog*)data;
-  const char* servername = dialog->serverName->value();
-  const char* filename;
-  if (dialog->usedDir.empty())
-    dialog->usedDir = core::getuserhomedir();
-  
-  Fl_File_Chooser* file_chooser = new Fl_File_Chooser(dialog->usedDir.c_str(),
-                                                      _("TigerVNC configuration (*.tigervnc)"),
-                                                      Fl_File_Chooser::CREATE,
-                                                      _("Save the TigerVNC configuration to file"));
-  
-  file_chooser->preview(0);
-  file_chooser->previewButton->hide();
-  file_chooser->show();
-  
-  while(1) {
-    
-    // Block until user picks something.
-    while(file_chooser->shown())
-      Fl::wait();
-    
-    // Did the user hit cancel?
-    if (file_chooser->value() == nullptr) {
-      delete(file_chooser);
-      return;
-    }
-    
-    filename = file_chooser->value();
-    dialog->updateUsedDir(filename);
-    
-    FILE* f = fopen(filename, "r");
-    if (f) {
-
-      // The file already exists.
-      fclose(f);
-      int overwrite_choice = fl_choice(_("%s already exists. Do you want to overwrite?"), 
-                                       nullptr, _("No"), _("Overwrite"), filename);
-      if (overwrite_choice != 2) {
-
-        // If the user doesn't want to overwrite:
-        file_chooser->show();
-        continue;
-      }
-    }
-
-    break;
-  }
-  
-  try {
-    saveViewerParameters(filename, servername);
-  } catch (std::exception& e) {
-    vlog.error("%s", e.what());
-    fl_alert(_("Unable to save the specified configuration "
-               "file:\n\n%s"), e.what());
-  }
-  
   delete(file_chooser);
 }
 
@@ -324,7 +259,7 @@ void ServerDialog::handleConnect(Fl_Widget* /*widget*/, void *data)
   dialog->hide();
 
   try {
-    savePortableViewerParameters();
+    saveViewerParameters(nullptr, servername);
   } catch (std::exception& e) {
     vlog.error(_("Unable to save the default configuration: %s"),
                e.what());
@@ -381,7 +316,7 @@ void ServerDialog::loadServerHistory()
   if (document["history"].isArray()) {
     for (const auto& entry : document["history"])
       if (entry.isString()) rawHistory.push_back(entry.asString());
-  } else rawHistory = loadHistoryFromRegKey();
+  }
 #else
 
   const char* stateDir = core::getvncstatedir();

@@ -53,6 +53,7 @@
 #include "fltk/layout.h"
 #include "fltk/util.h"
 #include "Viewport.h"
+#include <cstring>
 #include "CConn.h"
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
@@ -186,6 +187,7 @@ Viewport::~Viewport()
 
 void Viewport::updateWindow()
 {
+  if (frozen()) return;
   core::Rect r;
 
   r = frameBuffer->getDamage();
@@ -211,6 +213,7 @@ static const char * dotcursor_xpm[] = {
 
 void Viewport::setCursor()
 {
+  if (!cc || frozen()) return;
   int width, height;
   core::Point hotspot;
   const uint8_t* data;
@@ -285,6 +288,7 @@ void Viewport::showCursor()
 
 void Viewport::handleClipboardRequest()
 {
+  if (!cc || frozen()) return;
   if (viewOnly)
     return;
 
@@ -293,6 +297,7 @@ void Viewport::handleClipboardRequest()
 
 void Viewport::handleClipboardAnnounce(bool available)
 {
+  if (!cc || frozen()) return;
   if (viewOnly)
     return;
 
@@ -317,6 +322,7 @@ void Viewport::handleClipboardAnnounce(bool available)
 
 void Viewport::handleClipboardData(const char* data)
 {
+  if (!cc || frozen()) return;
   size_t len;
 
   if (!hasFocus())
@@ -337,6 +343,7 @@ void Viewport::handleClipboardData(const char* data)
 
 void Viewport::setLEDState(unsigned int ledState)
 {
+  if (!cc || frozen()) return;
   vlog.debug("Got server LED state: 0x%08x", ledState);
 
   // The first message is just considered to be the server announcing
@@ -361,6 +368,7 @@ void Viewport::setLEDState(unsigned int ledState)
 
 void Viewport::pushLEDState()
 {
+  if (!cc || frozen()) return;
   unsigned int ledState;
 
   if (viewOnly)
@@ -402,15 +410,16 @@ void Viewport::pushLEDState()
 
 Surface* Viewport::displayBuffer()
 {
-  if ((w() == frameBuffer->width()) && (h() == frameBuffer->height()))
-    return frameBuffer;
+  auto visible = frozen() ? frozenBuffer.get() : frameBuffer;
+  if ((w() == visible->width()) && (h() == visible->height()))
+    return visible;
 
   if (!scaledBuffer) {
     scaledBuffer = new Surface(w(), h());
     scaledBufferDirty = true;
   }
   if (scaledBufferDirty) {
-    frameBuffer->drawScaled(scaledBuffer, 0, 0, w(), h());
+    visible->drawScaled(scaledBuffer, 0, 0, w(), h());
     scaledBufferDirty = false;
   }
   return scaledBuffer;
@@ -448,6 +457,49 @@ void Viewport::draw()
 }
 
 
+core::Point Viewport::displayedSize() const
+{
+  auto visible = frozen() ? frozenBuffer.get() : frameBuffer;
+  return {visible->width(), visible->height()};
+}
+#ifdef TIGERVNCS_SESSION_TEST
+uint32_t Viewport::displayedPixel() const
+{
+  auto visible = frozen() ? frozenBuffer.get() : frameBuffer;
+  int stride; uint32_t pixel = 0;
+  std::memcpy(&pixel, visible->getBuffer({0,0,1,1}, &stride), sizeof(pixel));
+  return pixel;
+}
+#endif
+
+void Viewport::freezeFramebuffer(rfb::ModifiablePixelBuffer* buffer)
+{
+  resetEmulation();
+  Fl::remove_timeout(handlePointerTimeout, this);
+  keyboard->reset(); shortcutHandler.reset(); pressedKeys.clear();
+  shortcutActive = shortcutBypass = false;
+  lastButtonMask = 0; pendingClientClipboard = false;
+  firstLEDState = true;
+  if (!frozenBuffer) frozenBuffer.reset(static_cast<PlatformPixelBuffer*>(buffer));
+  else if (buffer && buffer != frozenBuffer.get()) delete buffer;
+  frameBuffer = frozenBuffer.get();
+  cc = nullptr;
+}
+
+void Viewport::attachFramebuffer(int width, int height)
+{
+  frameBuffer = new PlatformPixelBuffer(width, height);
+  cc->setFramebuffer(frameBuffer);
+}
+
+void Viewport::commitFramebuffer()
+{
+  frozenBuffer.reset();
+  scaledBufferDirty = true;
+  delete scaledBuffer; scaledBuffer = nullptr;
+  redraw();
+}
+
 void Viewport::resizeFramebuffer(int w, int h)
 {
   if ((w != frameBuffer->width()) || (h != frameBuffer->height())) {
@@ -459,6 +511,7 @@ void Viewport::resizeFramebuffer(int w, int h)
     cc->setFramebuffer(frameBuffer);
   }
 
+  if (frozen()) return;
   delete scaledBuffer;
   scaledBuffer = nullptr;
   redraw();
@@ -480,6 +533,7 @@ void Viewport::resize(int x, int y, int w, int h)
 
 int Viewport::handle(int event)
 {
+  if (!cc || frozen()) return Fl_Widget::handle(event);
   std::string filtered;
   int buttonMask, wheelMask;
 
@@ -602,6 +656,7 @@ int Viewport::handle(int event)
 void Viewport::sendPointerEvent(const core::Point& pos,
                                 uint16_t buttonMask)
 {
+  if (!cc || frozen()) return;
   if (viewOnly)
       return;
 
@@ -637,6 +692,7 @@ void Viewport::handleClipboardChange(int source, void *data)
   Viewport *self = (Viewport *)data;
 
   assert(self);
+  if (!self->cc || self->frozen()) return;
 
   if (viewOnly)
     return;
@@ -691,6 +747,7 @@ void Viewport::handleClipboardChange(int source, void *data)
 
 void Viewport::flushPendingClipboard()
 {
+  if (!cc || frozen()) return;
   if (pendingClientClipboard) {
     if (clipboardSource != 0 &&
         !Fl::clipboard_contains(Fl::clipboard_plain_text)) {
@@ -715,6 +772,7 @@ void Viewport::flushPendingClipboard()
 void Viewport::handlePointerEvent(const core::Point& pos,
                                   uint16_t buttonMask)
 {
+  if (!cc || frozen()) return;
   core::Point remote = windowToDesktop(pos, w(), h(),
                                        frameBuffer->width(), frameBuffer->height());
   filterPointerEvent(remote, buttonMask);
@@ -726,6 +784,7 @@ void Viewport::handlePointerTimeout(void *data)
   Viewport *self = (Viewport *)data;
 
   assert(self);
+  if (!self->cc || self->frozen()) return;
 
   try {
     self->cc->sendPointerEvent(self->lastPointerPos,
@@ -739,6 +798,7 @@ void Viewport::handlePointerTimeout(void *data)
 
 void Viewport::resetKeyboard()
 {
+  if (!cc || frozen()) { keyboard->reset(); pressedKeys.clear(); return; }
   try {
     cc->releaseAllKeys();
   } catch (std::exception& e) {
@@ -758,6 +818,7 @@ void Viewport::resetKeyboard()
 void Viewport::handleKeyPress(int systemKeyCode,
                               uint32_t keyCode, uint32_t keySym)
 {
+  if (!cc || frozen()) return;
   pressedKeys.insert(systemKeyCode);
 
   // Possible keyboard shortcut?
@@ -883,6 +944,7 @@ void Viewport::handleKeyPress(int systemKeyCode,
 void Viewport::sendKeyPress(int systemKeyCode,
                             uint32_t keyCode, uint32_t keySym)
 {
+  if (!cc || frozen()) return;
   if (viewOnly)
     return;
 
@@ -897,6 +959,7 @@ void Viewport::sendKeyPress(int systemKeyCode,
 
 void Viewport::handleKeyRelease(int systemKeyCode)
 {
+  if (!cc || frozen()) return;
   pressedKeys.erase(systemKeyCode);
 
   if (pressedKeys.empty())
@@ -950,6 +1013,7 @@ void Viewport::handleKeyRelease(int systemKeyCode)
 
 void Viewport::sendKeyRelease(int systemKeyCode)
 {
+  if (!cc || frozen()) return;
   if (viewOnly)
     return;
 
@@ -1025,13 +1089,14 @@ void Viewport::initContextMenu()
                 0, nullptr, (void*)ID_OPTIONS, 0);
   fltk_menu_add(contextMenu, C_("ContextMenu|", "Connection &info..."),
                 0, nullptr, (void*)ID_INFO, 0);
-  fltk_menu_add(contextMenu, C_("ContextMenu|", "About &TigerVNC..."),
+  fltk_menu_add(contextMenu, C_("ContextMenu|", "About &TigerVNCs..."),
                 0, nullptr, (void*)ID_ABOUT, 0);
 }
 #pragma GCC diagnostic pop
 
 void Viewport::popupContextMenu()
 {
+  if (!cc || frozen()) return;
   const Fl_Menu_Item *m;
 
   // Make sure the menu is reset to its initial state between goes or

@@ -28,20 +28,24 @@ gtest_discover_tests(portableconfig)
 
 if(WIN32)
   add_executable(apple_session_probe EXCLUDE_FROM_ALL ../integration/apple_session_probe.cxx
-    ../../vncviewer/ConnectionStore.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)
+    ../../vncviewer/ConnectionStore.cxx
+    ../../vncviewer/VpnProfiles.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)
   target_include_directories(apple_session_probe SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
   target_link_libraries(apple_session_probe PRIVATE rfbclient network core jsoncpp_static ${FLTK_LIBRARIES} bcrypt crypt32)
   add_executable(presence_probe EXCLUDE_FROM_ALL ../integration/presence_probe.cxx
-    ../../vncviewer/PresenceMonitor.cxx ../../vncviewer/PresencePing.cxx)
+    ../../vncviewer/PresenceMonitor.cxx ../../vncviewer/PresencePing.cxx ../../vncviewer/NetworkSettings.cxx)
   target_link_libraries(presence_probe PRIVATE network core jsoncpp_static iphlpapi)
   add_executable(connection_fixture EXCLUDE_FROM_ALL ../integration/connection_fixture.cxx
-    ../../vncviewer/ConnectionStore.cxx ../../vncviewer/CredentialVault.cxx
+    ../../vncviewer/ConnectionStore.cxx
+    ../../vncviewer/VpnProfiles.cxx ../../vncviewer/CredentialVault.cxx
     ../../vncviewer/PortableConfig.cxx)
   target_include_directories(connection_fixture SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
   target_link_libraries(connection_fixture PRIVATE network core jsoncpp_static
     ${FLTK_LIBRARIES} bcrypt crypt32)
-  add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx presence.cxx
+  add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx presence.cxx sessionliveness.cxx networksettings.cxx
+    ../../vncviewer/NetworkSettings.cxx
     ../../vncviewer/PresenceMonitor.cxx ../../vncviewer/ConnectionStore.cxx
+    ../../vncviewer/VpnProfiles.cxx
     ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx
     ../../vncviewer/ConnectionTree.cxx)
   target_include_directories(connectionstore SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})

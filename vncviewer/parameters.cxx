@@ -32,6 +32,8 @@
 
 #include "parameters.h"
 #include "PortableConfig.h"
+#include "NetworkSettings.h"
+#include "VpnProfiles.h"
 #include "PortableSettings.h"
 
 #include <core/Configuration.h>
@@ -274,6 +276,10 @@ static const char* IDENTIFIER_STRING = "TigerVNC Configuration file Version 1.0"
  * the graphical user interface
  */
 static core::Parameter* parameterArray[] = {
+  &networkSettings::connectTimeout, &networkSettings::sessionTimeout,
+  &networkSettings::pingTimeout, &networkSettings::pingPeriod,
+  &networkSettings::pingMinimum, &networkSettings::pingEnabled,
+  &vpnProfiles::openVpnExecutable, &vpnProfiles::wireGuardDirectory,
   /* Security */
 #ifdef HAVE_GNUTLS
   &rfb::CSecurityTLS::X509CA,
@@ -323,17 +329,12 @@ static core::Parameter* readOnlyParameterArray[] = {
 
 // Only persist user preferences here, never transient credentials, test flags,
 // a server's negotiated pixel format, or its automatically chosen JPEG quality.
-static core::Parameter* portableParameters[] = {
-  &scaleToWindow, &autoSelect, &fullColour, &lowColourLevel, &preferredEncoding,
-  &customCompressLevel, &compressLevel, &rfb::CConnection::noJpeg, &qualityLevel
-};
-
 void savePortableViewerParameters()
 {
   PortableConfig config(PortableConfig::executablePath());
   // Re-read before updating so unrelated connection fields survive a save.
   Json::Value document = config.read();
-  for (auto* parameter : portableParameters) {
+  for (auto* parameter : parameterArray) {
     Json::Value value;
     if (auto* boolParameter = dynamic_cast<core::BoolParameter*>(parameter))
       value = bool(*boolParameter);
@@ -343,6 +344,7 @@ void savePortableViewerParameters()
       value = parameter->getValueStr();
     document["viewer"][parameter->getName()] = value;
   }
+  document["settingsMigrated"] = true;
   config.write(document);
 }
 
@@ -351,10 +353,10 @@ void loadPortableViewerParameters()
   PortableConfig config(PortableConfig::executablePath());
   Json::Value document = config.read();
   std::vector<std::string> previous;
-  for (auto* parameter : portableParameters)
+  for (auto* parameter : parameterArray)
     previous.push_back(parameter->getValueStr());
   try {
-    for (auto* parameter : portableParameters) {
+    for (auto* parameter : parameterArray) {
       const Json::Value& value = document["viewer"][parameter->getName()];
       if (value.isNull())
         continue;
@@ -373,7 +375,7 @@ void loadPortableViewerParameters()
     }
   } catch (...) {
     size_t index = 0;
-    for (auto* parameter : portableParameters)
+    for (auto* parameter : parameterArray)
       parameter->setParam(previous[index++].c_str());
     throw;
   }
@@ -466,46 +468,6 @@ static bool decodeValue(const char* val, char* dest, size_t destSize) {
 
 
 #ifdef _WIN32
-static void setKeyString(const char *_name, const char *_value, HKEY* hKey) {
-  
-  const DWORD buffersize = 256;
-
-  wchar_t name[buffersize];
-  unsigned size = fl_utf8towc(_name, strlen(_name)+1, name, buffersize);
-  if (size >= buffersize)
-    throw std::length_error("The name of the parameter is too large");
-
-  char encodingBuffer[buffersize];
-  if (!encodeValue(_value, encodingBuffer, buffersize))
-    throw std::length_error("The parameter is too large");
-
-  wchar_t value[buffersize];
-  size = fl_utf8towc(encodingBuffer, strlen(encodingBuffer)+1, value, buffersize);
-  if (size >= buffersize)
-    throw std::length_error("The parameter is too large");
-
-  LONG res = RegSetValueExW(*hKey, name, 0, REG_SZ, (BYTE*)&value, (wcslen(value)+1)*2);
-  if (res != ERROR_SUCCESS)
-    throw core::win32_error("RegSetValueExW", res);
-}
-
-
-static void setKeyInt(const char *_name, const int _value, HKEY* hKey) {
-
-  const DWORD buffersize = 256;
-  wchar_t name[buffersize];
-  DWORD value = _value;
-
-  unsigned size = fl_utf8towc(_name, strlen(_name)+1, name, buffersize);
-  if (size >= buffersize)
-    throw std::length_error("The name of the parameter is too large");
-
-  LONG res = RegSetValueExW(*hKey, name, 0, REG_DWORD, (BYTE*)&value, sizeof(DWORD));
-  if (res != ERROR_SUCCESS)
-    throw core::win32_error("RegSetValueExW", res);
-}
-
-
 static bool getKeyString(const char* _name, char* dest, size_t destSize, HKEY* hKey) {
   
   const DWORD buffersize = 256;
@@ -567,129 +529,6 @@ static bool getKeyInt(const char* _name, int* dest, HKEY* hKey) {
 
   *dest = (int)value;
   return true;
-}
-
-static void removeValue(const char* _name, HKEY* hKey) {
-  const DWORD buffersize = 256;
-  wchar_t name[buffersize];
-
-  unsigned size = fl_utf8towc(_name, strlen(_name)+1, name, buffersize);
-  if (size >= buffersize)
-    throw std::length_error("The name of the parameter is too large");
-
-  LONG res = RegDeleteValueW(*hKey, name);
-  if (res != ERROR_SUCCESS) {
-    if (res != ERROR_FILE_NOT_FOUND)
-      throw core::win32_error("RegDeleteValueW", res);
-    // The value does not exist, no need to remove it.
-    return;
-  }
-}
-
-void saveHistoryToRegKey(const std::list<std::string>& serverHistory)
-{
-  HKEY hKey;
-  LONG res = RegCreateKeyExW(HKEY_CURRENT_USER,
-                             L"Software\\TigerVNC\\vncviewer\\history", 0, nullptr,
-                             REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, nullptr,
-                             &hKey, nullptr);
-
-  if (res != ERROR_SUCCESS)
-    throw core::win32_error(_("Failed to create registry key"), res);
-
-  unsigned index = 0;
-  assert(SERVER_HISTORY_SIZE < 100);
-  char indexString[3];
-
-  try {
-    for (const std::string& entry : serverHistory) {
-      if (index > SERVER_HISTORY_SIZE)
-        break;
-      snprintf(indexString, 3, "%d", index);
-      setKeyString(indexString, entry.c_str(), &hKey);
-      index++;
-    }
-  } catch (std::exception& e) {
-    RegCloseKey(hKey);
-    throw;
-  }
-
-  res = RegCloseKey(hKey);
-  if (res != ERROR_SUCCESS)
-    throw core::win32_error(_("Failed to close registry key"), res);
-}
-
-static void saveToReg(const char* servername) {
-  
-  HKEY hKey;
-    
-  LONG res = RegCreateKeyExW(HKEY_CURRENT_USER,
-                             L"Software\\TigerVNC\\vncviewer", 0, nullptr,
-                             REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, nullptr,
-                             &hKey, nullptr);
-  if (res != ERROR_SUCCESS)
-    throw core::win32_error(_("Failed to create registry key"), res);
-
-  try {
-    setKeyString("ServerName", servername, &hKey);
-  } catch (std::exception& e) {
-    RegCloseKey(hKey);
-    throw std::runtime_error(core::format(
-      _("Failed to save \"%s\": %s"), "ServerName", e.what()));
-  }
-
-  for (core::Parameter* param : parameterArray) {
-    core::IntParameter* iparam;
-    core::BoolParameter* bparam;
-
-    if (param->isDefault()) {
-      try {
-        removeValue(param->getName(), &hKey);
-      } catch (std::exception& e) {
-        RegCloseKey(hKey);
-        throw std::runtime_error(
-          core::format(_("Failed to remove \"%s\": %s"),
-                       param->getName(), e.what()));
-      }
-      continue;
-    }
-
-    iparam = dynamic_cast<core::IntParameter*>(param);
-    bparam = dynamic_cast<core::BoolParameter*>(param);
-
-    try {
-      if (iparam != nullptr) {
-        setKeyInt(iparam->getName(), (int)*(iparam), &hKey);
-      } else if (bparam != nullptr) {
-        setKeyInt(bparam->getName(), (int)*(bparam), &hKey);
-      } else {
-        setKeyString(param->getName(), param->getValueStr().c_str(), &hKey);
-      }
-    } catch (std::exception& e) {
-      RegCloseKey(hKey);
-      throw std::runtime_error(
-        core::format(_("Failed to save \"%s\": %s"),
-                     param->getName(), e.what()));
-    }
-  }
-
-  // Remove read-only parameters to replicate the behaviour of Linux/macOS when they
-  // store a config to disk. If the parameter hasn't been migrated at this point it
-  // will be lost.
-  for (core::Parameter* param : readOnlyParameterArray) {
-    try {
-      removeValue(param->getName(), &hKey);
-    } catch (std::exception& e) {
-      RegCloseKey(hKey);
-      throw std::runtime_error(
-        core::format(_("Failed to remove \"%s\": %s"),
-                     param->getName(), e.what()));
-    }
-  }
-
-  res = RegCloseKey(hKey);
-  if (res != ERROR_SUCCESS)
-    throw core::win32_error(_("Failed to close registry key"), res);
 }
 
 std::list<std::string> loadHistoryFromRegKey()
@@ -788,7 +627,7 @@ static std::string loadFromReg() {
   }
 
   const size_t buffersize = 256;
-  char servername[buffersize];
+  char servername[buffersize] = {};
 
   try {
     getKeyString("ServerName", servername, buffersize, &hKey);
@@ -820,6 +659,13 @@ static std::string loadFromReg() {
 
 void saveViewerParameters(const char *filename, const char *servername) {
 
+#ifdef _WIN32
+  (void)filename;
+  savePortableViewerParameters();
+  PortableConfig file(PortableConfig::executablePath());
+  auto document = file.read(); document["lastServer"] = servername ? servername : ""; file.write(document);
+  return;
+#endif
   const size_t buffersize = 256;
   char filepath[PATH_MAX];
   char encodingBuffer[buffersize];
@@ -827,10 +673,6 @@ void saveViewerParameters(const char *filename, const char *servername) {
   // Write to the registry or a predefined file if no filename was specified.
   if(filename == nullptr) {
 
-#ifdef _WIN32
-    saveToReg(servername);
-    return;
-#endif
     
     const char* configDir = core::getvncconfigdir();
     if (configDir == nullptr)
@@ -907,7 +749,19 @@ std::string loadViewerParameters(const char *filename) {
   if(filename == nullptr) {
 
 #ifdef _WIN32
-    return loadFromReg();
+    PortableConfig config(PortableConfig::executablePath());
+    auto document = config.read();
+    if (document["settingsMigrated"] != true) {
+      auto legacyServer = loadFromReg();
+      networkSettings::loadLegacyRegistry();
+      if (!document.isMember("lastServer")) document["lastServer"] = legacyServer;
+      if (!document["history"].isArray()) {
+        document["history"] = Json::Value(Json::arrayValue);
+        for (const auto& host : loadHistoryFromRegKey()) document["history"].append(host);
+      }
+      config.write(document);
+    }
+    return document.get("lastServer", "").asString();
 #endif
 
     const char* configDir = core::getvncconfigdir();

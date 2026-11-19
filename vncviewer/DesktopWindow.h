@@ -52,6 +52,13 @@ public:
 
   // Resize the current framebuffer, but retain the contents
   void resizeFramebuffer(int new_w, int new_h);
+  void setConnection(CConn* connection);
+  void freezeFramebuffer(rfb::ModifiablePixelBuffer* framebuffer);
+  void attachFramebuffer(int width, int height);
+  void commitFramebuffer();
+#ifdef TIGERVNCS_SESSION_TEST
+  uint32_t displayedPixel() const;
+#endif
 
   // A previous call to writeSetDesktopSize() has completed
   void setDesktopSizeDone(unsigned result);

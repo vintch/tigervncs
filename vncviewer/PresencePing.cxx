@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "PresenceMonitor.h"
+#include "NetworkSettings.h"
 #include <network/TcpSocket.h>
 #include <atomic>
 #include <condition_variable>
@@ -22,8 +23,12 @@ struct Job {
   std::atomic<bool> cancelled{false}, sent{false}, done{false};
   bool success = false, reportedSent = false;
   int64_t sentAt = 0;
+  uint64_t generation = 0;
+  int timeoutMs = 3000, periodMs = 3000, minimumMs = 1000;
 };
 struct Limits {
+  std::atomic<bool> active{true};
+  std::atomic<uint64_t> generation{0};
   std::atomic<unsigned> workers{0};
   std::mutex mutex;
   std::condition_variable wake;
@@ -47,7 +52,7 @@ struct EchoHandle {
   explicit EchoHandle(bool ipv6) : value(ipv6 ? Icmp6CreateFile() : IcmpCreateFile()) {}
   ~EchoHandle() { if (value != INVALID_HANDLE_VALUE) IcmpCloseHandle(value); }
 };
-bool resolve(const std::string& host, sockaddr_storage& result) {
+bool resolve(const std::string& host, sockaddr_storage& result, int timeoutMs) {
   auto v4 = reinterpret_cast<sockaddr_in*>(&result);
   auto v6 = reinterpret_cast<sockaddr_in6*>(&result);
   if (InetPtonA(AF_INET, host.c_str(), &v4->sin_addr) == 1) { v4->sin_family = AF_INET; return true; }
@@ -60,7 +65,7 @@ bool resolve(const std::string& host, sockaddr_storage& result) {
   ADDRINFOEXW hints{};
   hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
   ADDRINFOEXW* addresses = nullptr;
-  timeval timeout{3, 0};
+  timeval timeout{timeoutMs / 1000, (timeoutMs % 1000) * 1000};
   int status = GetAddrInfoExW(name.data(), nullptr, NS_DNS, nullptr, &hints,
                               &addresses, &timeout, nullptr, nullptr, nullptr);
   std::unique_ptr<ADDRINFOEXW, decltype(&FreeAddrInfoExW)> owner(addresses, FreeAddrInfoExW);
@@ -80,7 +85,8 @@ bool echo(const PingTarget& target, const std::shared_ptr<Job>& job, const std::
   std::string host; int port;
   network::getHostAndPort(target.address.c_str(), &host, &port);
   sockaddr_storage destination{};
-  if (!resolve(host, destination) || job->cancelled.load()) return false;
+  if (!resolve(host, destination, job->timeoutMs) || job->cancelled.load() || !shared->active.load() ||
+      job->generation != shared->generation.load()) return false;
   bool ipv6 = destination.ss_family == AF_INET6;
   EventHandle event;
   EchoHandle handle(ipv6);
@@ -91,19 +97,19 @@ bool echo(const PingTarget& target, const std::shared_ptr<Job>& job, const std::
   DWORD count, error;
   {
     std::unique_lock<std::mutex> lock(shared->mutex);
-    while (!job->cancelled.load() && (pingClockMs() - shared->lastSend < 1000 ||
-           (shared->lastById.count(target.id) && pingClockMs() - shared->lastById[target.id] < 3000)))
+    while (!job->cancelled.load() && shared->active.load() && job->generation == shared->generation.load() && (pingClockMs() - shared->lastSend < job->minimumMs ||
+           (shared->lastById.count(target.id) && pingClockMs() - shared->lastById[target.id] < job->periodMs)))
       shared->wake.wait_for(lock, std::chrono::milliseconds(50));
-    if (job->cancelled.load()) return false;
+    if (job->cancelled.load() || !shared->active.load() || job->generation != shared->generation.load()) return false;
     job->sentAt = pingClockMs();
     if (ipv6)
       count = Icmp6SendEcho2(handle.value, event.value, nullptr, nullptr, &source,
         reinterpret_cast<sockaddr_in6*>(&destination), payload, sizeof(payload), nullptr,
-        reply.data(), DWORD(reply.size()), 3000);
+        reply.data(), DWORD(reply.size()), job->timeoutMs);
     else
       count = IcmpSendEcho2(handle.value, event.value, nullptr, nullptr,
         reinterpret_cast<sockaddr_in*>(&destination)->sin_addr.s_addr, payload, sizeof(payload), nullptr,
-        reply.data(), DWORD(reply.size()), 3000);
+        reply.data(), DWORD(reply.size()), job->timeoutMs);
     error = GetLastError();
     shared->lastSend = pingClockMs();
     shared->lastById[target.id] = shared->lastSend;
@@ -111,7 +117,7 @@ bool echo(const PingTarget& target, const std::shared_ptr<Job>& job, const std::
   }
   if (count == 0 && error != ERROR_IO_PENDING) return false;
   if (count == 0) {
-    // Windows completes this operation after its 3000 ms timeout. Keep all
+    // Windows completes this operation after its configured timeout. Keep all
     // native buffers alive until completion, even if the UI cancelled it.
     // Workers are globally capped at four; the UI never waits for them.
     if (WaitForSingleObject(event.value, INFINITE) != WAIT_OBJECT_0) return false;
@@ -133,10 +139,16 @@ public:
     shared->wake.notify_all();
   }
   bool start(const PingTarget& target, uint64_t token) override {
-    if (!enabled) return false;
-    if (shared->workers.fetch_add(1) >= 4) { shared->workers.fetch_sub(1); return false; }
+    if (!enabled || !shared->active.load()) return false;
+    unsigned capacity = std::max(4, std::min(64,
+      (networkSettings::pingTimeoutMs() + networkSettings::pingMinimumMs() - 1) /
+       networkSettings::pingMinimumMs() + 1));
+    if (shared->workers.fetch_add(1) >= capacity) { shared->workers.fetch_sub(1); return false; }
     try {
       auto job = std::make_shared<Job>(); job->token = token;
+      job->generation = shared->generation.load();
+      job->timeoutMs = networkSettings::pingTimeoutMs(); job->periodMs = networkSettings::pingPeriodMs();
+      job->minimumMs = networkSettings::pingMinimumMs();
       auto limiter = shared;
       jobs.push_back(job);
       try {
@@ -181,3 +193,11 @@ std::unique_ptr<PingTransport> createPingTransport() {
   try { network::initSockets(); } catch (...) { transport->enabled = false; }
   return std::unique_ptr<PingTransport>(transport);
 }
+
+void suspendPresence() {
+  auto shared = limits(); shared->active.store(false); shared->generation.fetch_add(1); shared->wake.notify_all();
+}
+void resumePresence() {
+  auto shared = limits(); shared->active.store(true); shared->wake.notify_all();
+}
+bool presenceSuspended() { return !limits()->active.load(); }

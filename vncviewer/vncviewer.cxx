@@ -64,6 +64,9 @@
 #include "parameters.h"
 #include "PortableSettings.h"
 #include "CConn.h"
+#include "DesktopWindow.h"
+#include "NetworkSettings.h"
+#include "VpnProfiles.h"
 #include "ServerDialog.h"
 #include "touch.h"
 #include "vncviewer.h"
@@ -83,6 +86,8 @@ static bool inMainloop = false;
 static bool exitMainloop = false;
 static std::string exitError;
 static bool fatalError = false;
+static bool reconnectRequested = false;
+static bool userDisconnected = false;
 
 static const char *about_text()
 {
@@ -92,10 +97,11 @@ static const char *about_text()
   // encodings, so we need to make sure we get a fresh string every
   // time.
   snprintf(buffer, sizeof(buffer),
-           _("TigerVNC v%s\n"
+           _("TigerVNCs v%s\n"
+             "Skalierung und Computerliste mod, ver 1.0\n"
              "Built on: %s\n"
              "Copyright (C) 1999-%d TigerVNC team and many others (see README.rst)\n"
-             "See https://www.tigervnc.org for information on TigerVNC."),
+             "See https://www.tigervnc.org for information on TigerVNCs."),
            PACKAGE_VERSION, BUILD_TIMESTAMP, 2026);
 
   return buffer;
@@ -151,26 +157,42 @@ void abort_connection_unexpected(const std::exception &e)
 
 void disconnect()
 {
+  userDisconnected = true;
+  reconnectRequested = false;
+  exitError.clear();
   exitMainloop = true;
+}
+
+void reconnect_connection(const char* error)
+{
+  if (userDisconnected) return;
+  abort_connection("%s", error);
+  reconnectRequested = true;
 }
 
 void about_vncviewer()
 {
-  fl_message_title(_("About TigerVNC"));
+  fl_message_title(_("About TigerVNCs"));
   fl_message("%s", about_text());
 }
 
 static void mainloop(const char* vncserver, network::Socket* sock)
 {
+  DesktopWindow* retained = nullptr;
+  ConnectionCredentials credentials;
+  bool automatic = false;
   while (true) {
     CConn *cc = nullptr;
 
     exitMainloop = false;
     exitError.clear();
     fatalError = false;
+    reconnectRequested = false;
+    userDisconnected = false;
 
     try {
-      cc = new CConn();
+      cc = new CConn(retained, automatic ? &credentials : nullptr);
+      retained = nullptr;
       cc->connect(vncserver, sock);
     } catch (std::exception& e) {
       abort_connection_unexpected(e);
@@ -180,6 +202,7 @@ static void mainloop(const char* vncserver, network::Socket* sock)
       int next_timer;
 
       next_timer = core::Timer::checkTimeouts();
+      if (exitMainloop) break;
       if (next_timer < 0)
         next_timer = INT_MAX;
 
@@ -190,7 +213,22 @@ static void mainloop(const char* vncserver, network::Socket* sock)
     }
 
     bool established = cc && cc->state() == rfb::CConnection::RFBSTATE_NORMAL;
+    if (reconnectRequested && !userDisconnected && sock == nullptr && cc && (established || automatic)) {
+      credentials = cc->credentialsForReconnect();
+      retained = cc->releaseDesktopForReconnect();
+      delete cc;
+      vlog.info("Automatically reconnecting: %s", exitError.c_str());
+      // Yield between failed attempts so Close remains responsive. Never
+      // recreate the dialog or window, or ask for credentials during recovery.
+      if (automatic) Fl::wait(0.25);
+      if (userDisconnected) { delete retained; retained = nullptr; break; }
+      automatic = true;
+      continue;
+    }
     delete cc;
+    delete retained; retained = nullptr;
+
+    if (automatic) break;
 
     if (established) {
       // A finished session returns directly to the connection manager.
@@ -251,7 +289,7 @@ static void CleanupSignalHandler(int sig)
 {
   // CleanupSignalHandler allows C++ object cleanup to happen because it calls
   // exit() rather than the default which is to abort.
-  vlog.info(_("Termination signal %d has been received. TigerVNC will now exit."), sig);
+  vlog.info(_("Termination signal %d has been received. TigerVNCs will now exit."), sig);
   exit(1);
 }
 
@@ -325,7 +363,7 @@ static void init_fltk()
   fl_message_hotspot(false);
 
   // Avoid empty titles for popups
-  fl_message_title_default("TigerVNC");
+  fl_message_title_default("TigerVNCs");
 
   // FLTK exposes these so that we can translate them.
   fl_no     = _("No");
@@ -356,13 +394,13 @@ static void init_fltk()
   Fl_File_Chooser::hidden_label = _("Show hidden files");
 
 #ifdef __APPLE__
-  Fl_Mac_App_Menu::about = _("About TigerVNC");
+  Fl_Mac_App_Menu::about = _("About TigerVNCs");
   Fl_Mac_App_Menu::print = ""; // Don't want the print item
   Fl_Mac_App_Menu::services = _("Services");
-  Fl_Mac_App_Menu::hide = _("Hide TigerVNC");
+  Fl_Mac_App_Menu::hide = _("Hide TigerVNCs");
   Fl_Mac_App_Menu::hide_others = _("Hide others");
   Fl_Mac_App_Menu::show = _("Show all");
-  Fl_Mac_App_Menu::quit = _("Quit TigerVNC");
+  Fl_Mac_App_Menu::quit = _("Quit TigerVNCs");
 
   fl_mac_set_about(about_callback, nullptr);
 
@@ -418,7 +456,7 @@ static void usage(const char *programName)
   fprintf(stderr, _("\n"
           "Options:\n\n"
           "  -display Xdisplay  - Specifies the X display for the viewer window\n"
-          "  -geometry geometry - Initial position of the main TigerVNC window. See the\n"
+          "  -geometry geometry - Initial position of the main TigerVNCs window. See the\n"
           "                       man page for details.\n"));
 #endif
 
@@ -488,7 +526,7 @@ create_base_dirs()
 #else
   const char *vncdir = strrchr(dir, '\\');
   if (vncdir != nullptr && strcmp(vncdir, "vnc") == 0)
-    vlog.info(_("%%APPDATA%%\\vnc is deprecated, please switch to the %%APPDATA%%\\TigerVNC location."));
+    vlog.info(_("%%APPDATA%%\\vnc is deprecated, please switch to the %%APPDATA%%\\TigerVNCs location."));
 #endif
 
   if (core::mkdir_p(dir, 0755) == -1) {
@@ -538,7 +576,7 @@ createTunnel(const char *gatewayHost, const char *remoteHost,
   setenv("L", lport, 1);
   if (!cmd)
     cmd = "/usr/bin/ssh -f -L \"$L\":\"$H\":\"$R\" -- \"$G\" sleep 20";
-  /* Compatibility with TigerVNC's method. */
+  /* Compatibility with TigerVNCs's method. */
   cmd2 = strdup(cmd);
   while ((percent = strchr(cmd2, '%')) != nullptr)
     *percent = '$';
@@ -572,24 +610,7 @@ int main(int argc, char** argv)
   fprintf(stderr,"\n%s\n", about_text());
 
   core::initStdIOLoggers();
-#ifdef WIN32
-  const char* tmp;
-  struct stat st;
-  std::string logfn;
-
-  tmp = getenv("TMP");
-  if ((tmp == nullptr) || (stat(tmp, &st) != 0))
-    tmp = getenv("TEMP");
-  if ((tmp == nullptr) || (stat(tmp, &st) != 0))
-    tmp = getenv("USERPROFILE");
-  if ((tmp == nullptr) || (stat(tmp, &st) != 0))
-    tmp = "C:\\temp";
-
-  logfn = core::format("%s\\vncviewer.log", tmp);
-  core::initFileLogger(logfn.c_str());
-#else
-  core::initFileLogger("/tmp/vncviewer.log");
-#endif
+  // Portable mode does not create persistent logs.
   core::LogWriter::setLogParams("*:stderr:30");
 
 #ifdef SIGHUP
@@ -612,6 +633,7 @@ int main(int argc, char** argv)
     vlog.error("%s", e.what());
     fl_alert("Unable to load portable settings:\n%s", e.what());
   }
+
 
   for (int i = 1; i < argc;) {
     int ret;
@@ -664,13 +686,21 @@ int main(int argc, char** argv)
   fl_open_display();
 #endif
 
+  vpnProfiles::refresh();
+
   init_fltk();
   enable_touch();
+#ifdef TIGERVNCS_SESSION_TEST
+  extern bool optionsUiStub();
+  if (optionsUiStub()) return 0;
+#endif
 
   // Check if the server name in reality is a configuration file
   potentiallyLoadConfigurationFile(vncServerName.c_str());
 
+#ifndef WIN32
   create_base_dirs();
+#endif
 
   network::Socket* sock = nullptr;
 

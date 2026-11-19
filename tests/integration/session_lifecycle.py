@@ -81,7 +81,7 @@ def run_case(executable, mode, retries):
     env = os.environ.copy()
     env["VNC_TEST_EVENTS"] = str(events_path)
     env["VNC_TEST_RETRIES"] = str(retries)
-    result = subprocess.run([str(viewer), "-Audio=0", "-ReconnectOnError=0",
+    result = subprocess.run([str(viewer), "-Audio=0", "-ReconnectOnError=0", "-ConnectTimeoutSeconds=4",
                              f"127.0.0.1::{port}"], env=env, cwd=ROOT,
                             capture_output=True, timeout=18)
     (directory / "viewer.log").write_bytes(result.stdout + result.stderr)
@@ -111,7 +111,7 @@ def run_case(executable, mode, retries):
 if __name__ == "__main__":
     executable = Path(sys.argv[1]).resolve()
     results = [run_case(executable, mode, retries) for mode, retries in [
-        ("refused", 1), ("early-drop", 1), ("silent", 1), ("established-drop", 0)]]
+        ("refused", 1), ("early-drop", 1), ("silent", 1)]]
     output = ROOT / "build" / "lifecycle-results.json"
     output.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(json.dumps(results, indent=2))

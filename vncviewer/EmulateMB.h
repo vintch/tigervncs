@@ -25,6 +25,7 @@
 class EmulateMB : public core::Timer::Callback {
 public:
   EmulateMB();
+  void resetEmulation();
 
   void filterPointerEvent(const core::Point& pos, uint16_t buttonMask);
 

@@ -50,7 +50,6 @@ public:
 protected:
   static void handleOptions(Fl_Widget *widget, void *data);
   static void handleLoad(Fl_Widget *widget, void *data);
-  static void handleSaveAs(Fl_Widget *widget, void *data);
   static void handleAbout(Fl_Widget *widget, void *data);
   static void handleCancel(Fl_Widget *widget, void *data);
   static void handleConnect(Fl_Widget *widget, void *data);
@@ -61,6 +60,8 @@ private:
   void expandManager(bool expanded);
   void editEntry(bool folder, bool existing);
   void closeEditor();
+  void updateVpnProfiles(const std::string& selected = "");
+  static void vpnAction(Fl_Widget*, void*);
   void showContextMenu(Fl_Tree_Item* item);
   void performManagerAction(const std::string& action);
   static void presenceTick(void*);
@@ -71,7 +72,11 @@ private:
   Fl_Tree* tree;
   Fl_Input *entryName, *entryAddress, *entryUser, *entryPassword;
   Fl_Choice *entryFolder, *entrySessionMode;
-  Fl_Check_Button* rememberPassword;
+  Fl_Check_Button *rememberPassword, *associateVpn;
+  Fl_Choice *vpnProvider, *vpnProfile;
+  std::vector<std::string> vpnProfileIds;
+  std::list<std::string> vpnProfileLabels;
+  bool vpnCatalogLoading = false;
   Fl_Button *managerButton;
   std::unique_ptr<PresenceMonitor> presence;
   ConnectionStore store;

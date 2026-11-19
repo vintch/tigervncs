@@ -52,18 +52,18 @@ void PresenceMonitor::tick(int64_t now, const std::vector<PingTarget>& visible) 
     auto& state = item.second;
     // Both unresolved jobs and sent packets have bounded waits. Late results
     // are ignored by token, including after a folder closes or address edits.
-    if (state.active && state.token && now - state.pendingSince >= 3000) {
+    if (state.active && state.token && now - state.pendingSince >= timeoutMs) {
       transport->cancel(state.token); finish(state, false);
     }
   }
   if (visible.empty()) return;
-  int64_t interval = std::max<int64_t>(1000, (3000 + int64_t(visible.size()) - 1) / int64_t(visible.size()));
+  int64_t interval = std::max<int64_t>(minimumMs, (periodMs + int64_t(visible.size()) - 1) / int64_t(visible.size()));
   if (now - lastDispatch < interval) return;
   const PingTarget* next = nullptr;
   int64_t oldest = now + 1;
   for (const auto& target : visible) {
     const auto& state = states.at(target.id);
-    if (!state.token && now - state.attempted >= 3000 && state.attempted < oldest) {
+    if (!state.token && now - state.attempted >= periodMs && state.attempted < oldest) {
       next = &target; oldest = state.attempted;
     }
   }

@@ -31,6 +31,8 @@ void abort_connection_unexpected(const std::exception &);
 
 // Cleanly terminate the connection
 void disconnect();
+// Restart a stalled/failed active session without showing an error dialog.
+void reconnect_connection(const char* error);
 
 void about_vncviewer();
 

@@ -25,6 +25,9 @@
 #include <core/Timer.h>
 
 #include <rfb/CConnection.h>
+#include "ConnectionStore.h"
+#include "SessionLiveness.h"
+#include <memory>
 
 namespace network { class Socket; }
 
@@ -34,11 +37,13 @@ class DesktopWindow;
 class CConn : public rfb::CConnection
 {
 public:
-  CConn();
+  CConn(DesktopWindow* retained = nullptr, const ConnectionCredentials* credentials = nullptr);
   ~CConn();
 
   void connect(const char* vncServerName, network::Socket* sock=nullptr);
   static void clearSavedCredentials();
+  DesktopWindow* releaseDesktopForReconnect();
+  const ConnectionCredentials& credentialsForReconnect() const { return recoveryCredentials; }
 
   std::string connectionInfo();
 
@@ -53,6 +58,10 @@ protected:
 
   void processNextMsg(core::Timer*);
   void connectionTimedOut(core::Timer*);
+  void checkSession(core::Timer*);
+  void rememberCredentials(const std::string* user, const std::string* password);
+  void checkConnect(core::Timer*);
+  void finishConnect();
 
   // CConnection callback methods
 
@@ -110,6 +119,14 @@ private:
   network::Socket* sock;
   core::MethodTimer<CConn> msgTimer;
   core::MethodTimer<CConn> connectionTimer;
+  core::MethodTimer<CConn> sessionTimer;
+  core::MethodTimer<CConn> connectPollTimer;
+  struct PendingConnect;
+  std::shared_ptr<PendingConnect> pendingConnect;
+  SessionLiveness liveness;
+  ConnectionCredentials recoveryCredentials;
+  bool recovering = false, fastClose = false, freshPixels = false;
+  bool reportedFirstFrame = false;
 
   DesktopWindow *desktop;
 

@@ -22,6 +22,9 @@ public:
 };
 std::unique_ptr<PingTransport> createPingTransport();
 int64_t pingClockMs();
+void suspendPresence();
+void resumePresence();
+bool presenceSuspended();
 
 // Main-thread scheduler; the transport owns all network work. No callbacks
 // from worker threads can access a window, tree item or this object.
@@ -31,6 +34,7 @@ public:
   ~PresenceMonitor();
   void tick(int64_t now, const std::vector<PingTarget>& visible);
   bool online(const std::string& id) const;
+  void configure(int period, int minimum, int timeout) { periodMs = period; minimumMs = minimum; timeoutMs = timeout; }
 private:
   struct State {
     std::string address;
@@ -44,5 +48,6 @@ private:
   std::map<std::string, State> states;
   uint64_t nextToken = 1;
   int64_t lastDispatch = -1000000;
+  int periodMs = 3000, minimumMs = 1000, timeoutMs = 3000;
 };
 #endif

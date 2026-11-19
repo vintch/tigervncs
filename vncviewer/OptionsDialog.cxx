@@ -41,6 +41,10 @@
 
 #include "MonitorIndicesParameter.h"
 #include "OptionsDialog.h"
+#include "NetworkSettings.h"
+#include "VpnProfiles.h"
+#include "PresenceMonitor.h"
+#include <FL/Fl_Spinner.H>
 #include "ShortcutHandler.h"
 #include "parameters.h"
 #include "PortableSettings.h"
@@ -77,7 +81,7 @@ int OptionsDialog::serverEncoding = -1;
 static std::set<OptionsDialog *> instances;
 
 OptionsDialog::OptionsDialog()
-  : Fl_Window(580, 490, _("TigerVNC options"))
+  : Fl_Window(580, 490, _("TigerVNCs options"))
 {
   int x, y;
   Fl_Navigation *navigation;
@@ -104,6 +108,8 @@ OptionsDialog::OptionsDialog()
     createShortcutsPage(tx, ty, tw, th);
     createDisplayPage(tx, ty, tw, th);
     createMiscPage(tx, ty, tw, th);
+    createNetworkPage(tx, ty, tw, th);
+    createVpnPage(tx, ty, tw, th);
   }
 
   navigation->end();
@@ -378,6 +384,14 @@ void OptionsDialog::loadOptions(void)
   /* Misc. */
   sharedCheckbox->value(shared);
   reconnectCheckbox->value(reconnectOnError);
+  connectTimeoutSpinner->value(networkSettings::connectTimeout);
+  sessionTimeoutSpinner->value(networkSettings::sessionTimeout);
+  pingTimeoutSpinner->value(networkSettings::pingTimeout);
+  pingPeriodSpinner->value(networkSettings::pingPeriod);
+  pingMinimumSpinner->value(networkSettings::pingMinimum);
+  pingEnabledCheckbox->value(networkSettings::pingEnabled);
+  openVpnPathInput->value(std::string(vpnProfiles::openVpnExecutable).c_str());
+  wireGuardPathInput->value(std::string(vpnProfiles::wireGuardDirectory).c_str());
 #ifdef HAVE_AUDIO
   audioCheckbox->value(playAudio);
 #endif
@@ -539,6 +553,18 @@ void OptionsDialog::storeOptions(void)
   /* Misc. */
   shared.setParam(sharedCheckbox->value());
   reconnectOnError.setParam(reconnectCheckbox->value());
+  networkSettings::connectTimeout.setParam(int(connectTimeoutSpinner->value()));
+  networkSettings::sessionTimeout.setParam(int(sessionTimeoutSpinner->value()));
+  networkSettings::pingTimeout.setParam(int(pingTimeoutSpinner->value()));
+  networkSettings::pingPeriod.setParam(int(pingPeriodSpinner->value()));
+  networkSettings::pingMinimum.setParam(int(pingMinimumSpinner->value()));
+  networkSettings::pingEnabled.setParam(bool(pingEnabledCheckbox->value()));
+  bool vpnChanged = std::string(vpnProfiles::openVpnExecutable) != openVpnPathInput->value() ||
+                    std::string(vpnProfiles::wireGuardDirectory) != wireGuardPathInput->value();
+  vpnProfiles::openVpnExecutable.setParam(openVpnPathInput->value());
+  vpnProfiles::wireGuardDirectory.setParam(wireGuardPathInput->value());
+  if (vpnChanged) vpnProfiles::refresh();
+  suspendPresence();
 #ifdef HAVE_AUDIO
   playAudio.setParam(audioCheckbox->value());
 #endif
@@ -558,7 +584,7 @@ void OptionsDialog::storeOptions(void)
   try {
     savePortableViewerParameters();
   } catch (const std::exception& e) {
-    fl_alert("Unable to save portable settings:\n%s", e.what());
+    fl_alert("Unable to save settings:\n%s", e.what());
   }
 }
 
@@ -1302,6 +1328,32 @@ void OptionsDialog::createDisplayPage(int tx, int ty, int tw, int th)
 }
 
 
+void OptionsDialog::createNetworkPage(int tx, int ty, int tw, int th)
+{
+  auto group = new Fl_Group(tx, ty, tw, th, _("Network"));
+  tx += OUTER_MARGIN; ty += OUTER_MARGIN;
+  auto spinner = [&](const char* label, int maximum) {
+    auto input = new Fl_Spinner(tx + 250, ty, 100, 25, label);
+    input->type(FL_INT_INPUT); input->range(1, maximum); input->step(1);
+    ty += 36;
+    return input;
+  };
+  connectTimeoutSpinner = spinner(_("Connection timeout (s):"), 120);
+  sessionTimeoutSpinner = spinner(_("Session response timeout (s):"), 120);
+  auto note = new Fl_Box(tx, ty, tw - OUTER_MARGIN*2, 44,
+    _("An unresponsive active session reconnects automatically.\nThe last image stays visible until a fresh frame arrives."));
+  note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE); note->labelsize(12); ty += 55;
+  pingEnabledCheckbox = new Fl_Check_Button(tx, ty, tw - OUTER_MARGIN*2, 25,
+    _("Enable ping in the connection manager")); ty += 36;
+  pingTimeoutSpinner = spinner(_("Ping reply timeout (s):"), 60);
+  pingPeriodSpinner = spinner(_("Ping period per computer (s):"), 3600);
+  pingMinimumSpinner = spinner(_("Minimum packet interval (s):"), 3600);
+  note = new Fl_Box(tx, ty, tw - OUTER_MARGIN*2, 45,
+    _("Ping runs only in the connection manager.\nNo ICMP packets are sent during a remote session."));
+  note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE); note->labelsize(12);
+  group->end();
+}
+
 void OptionsDialog::createMiscPage(int tx, int ty, int tw, int th)
 {
   Fl_Group *group = new Fl_Group(tx, ty, tw, th, _("Miscellaneous"));
@@ -1569,4 +1621,17 @@ void OptionsDialog::handleAlwaysCursor(Fl_Widget* /*widget*/, void *data)
   } else {
     dialog->cursorTypeChoice->deactivate();
   }
+}
+
+void OptionsDialog::createVpnPage(int tx, int ty, int tw, int th)
+{
+  auto group = new Fl_Group(tx, ty, tw, th, "VPN");
+  openVpnPathInput = new Fl_Input(tx + 15, ty + 45, tw - 30, 27, "OpenVPN Connect executable:");
+  openVpnPathInput->align(FL_ALIGN_TOP_LEFT);
+  wireGuardPathInput = new Fl_Input(tx + 15, ty + 112, tw - 30, 27, "Wireguard configuration directory:");
+  wireGuardPathInput->align(FL_ALIGN_TOP_LEFT);
+  auto note = new Fl_Box(tx + 15, ty + 160, tw - 30, 80,
+    "Profiles are read at startup and when these paths change.\nVPN associations can be set in the computer editor.\nVPN connections are not activated automatically yet.");
+  note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
+  group->end();
 }

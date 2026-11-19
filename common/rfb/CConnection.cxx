@@ -159,6 +159,14 @@ void CConnection::setFramebuffer(ModifiablePixelBuffer* fb)
   framebuffer = fb;
 }
 
+ModifiablePixelBuffer* CConnection::releaseFramebuffer()
+{
+  decoder.flush();
+  auto buffer = framebuffer;
+  framebuffer = nullptr;
+  return buffer;
+}
+
 void CConnection::initialiseProtocol()
 {
   state_ = RFBSTATE_PROTOCOL_VERSION;
