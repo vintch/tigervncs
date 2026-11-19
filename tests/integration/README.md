@@ -96,6 +96,12 @@ Verify Set initial RDP window size is off by default, disables both dimension
 inputs when off, and retains their values while toggled. The native launcher
 must omit /w and /h when off and include both when on. The unit suite checks
 both argument paths; the portable-settings check covers persistence.
+Automatic display tests also cover ignoring cached desktop dimensions and
+window placement, enabling smart sizing/dynamic resolution, exact restoration,
+and interrupted-session display recovery while preserving unrelated edits.
+For an authorized live check, use a native Default.rdp with cached 1024 x 600
+dimensions: with explicit sizing off, verify restoring/maximizing the local
+mstsc frame and content scaling, then disconnect without remote desktop input.
 The restore action changes native prompt preferences immediately; test its
 backend using isolated fixtures. Options / Input exposes Disable local mouse
 cursor. The server-provided local cursor image and hotspot stay unscaled at

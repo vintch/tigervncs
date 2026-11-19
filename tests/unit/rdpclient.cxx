@@ -130,6 +130,74 @@ TEST(RdpClient, NativeDefaultRestorationPreservesUnrelatedEdits) {
   EXPECT_EQ(text,"prompt for credentials:i:1\nauthentication level:i:2\ncustom:s:after\n");
   std::remove(path);
 }
+TEST(RdpClient, AutomaticDisplayIgnoresCachedSmallDesktopAndRestoresItExactly) {
+  const char* path="rdp-auto-display.rdp"; const char* config="rdp-auto-display.json";
+  std::remove(config);
+  const std::string original="prompt for credentials:i:1\nauthentication level:i:2\ndesktopwidth:i:1024\ndesktopheight:i:600\ndesktop size id:i:2\nwinposstr:s:0,1,384,165,1424,804\nsmart sizing:i:0\ndynamic resolution:i:0\ncustom:s:keep\n";
+  { std::ofstream file(path,std::ios::binary); file<<original; }
+  {
+    rdpClient::DefaultSettingsLease lease(core::utf8ToUTF16(path),config,true);
+    std::ifstream file(path,std::ios::binary); std::string active((std::istreambuf_iterator<char>(file)),{});
+    EXPECT_EQ(active.find("desktopwidth:"),std::string::npos);
+    EXPECT_EQ(active.find("desktopheight:"),std::string::npos);
+    EXPECT_EQ(active.find("desktop size id:"),std::string::npos);
+    EXPECT_EQ(active.find("winposstr:"),std::string::npos);
+    EXPECT_NE(active.find("smart sizing:i:1"),std::string::npos);
+    EXPECT_NE(active.find("dynamic resolution:i:1"),std::string::npos);
+    EXPECT_NE(active.find("custom:s:keep"),std::string::npos);
+    EXPECT_EQ(PortableConfig(config).read()["rdpRecovery"]["version"],2);
+  }
+  std::ifstream file(path,std::ios::binary); std::string restored((std::istreambuf_iterator<char>(file)),{}); file.close();
+  EXPECT_EQ(restored,original); EXPECT_TRUE(PortableConfig(config).read()["rdpRecovery"].isNull());
+  std::remove(path); std::remove(config);
+}
+TEST(RdpClient, AutomaticDisplayHandlesNativeUtf16AndLeavesExplicitSizingUntouched) {
+  const char* path="rdp-auto-utf16.rdp"; const char* config="rdp-auto-utf16.json";
+  std::remove(config);
+  const std::wstring original=L"\ufeffdesktopwidth:i:1024\r\ndesktopheight:i:600\r\nwinposstr:s:0,1,0,0,1040,639\r\nprompt for credentials:i:1\r\nauthentication level:i:2\r\n";
+  { std::ofstream file(path,std::ios::binary); file.write(reinterpret_cast<const char*>(original.data()),original.size()*sizeof(wchar_t)); }
+  {
+    rdpClient::DefaultSettingsLease lease(core::utf8ToUTF16(path),config,false);
+    std::ifstream file(path,std::ios::binary); std::string bytes((std::istreambuf_iterator<char>(file)),{});
+    std::wstring text(bytes.size()/2,L'\0'); memcpy(&text[0],bytes.data(),bytes.size());
+    EXPECT_NE(text.find(L"desktopwidth:i:1024"),std::wstring::npos);
+    EXPECT_EQ(text.find(L"smart sizing:"),std::wstring::npos);
+  }
+  {
+    rdpClient::DefaultSettingsLease lease(core::utf8ToUTF16(path),config,true);
+    std::ifstream file(path,std::ios::binary); std::string bytes((std::istreambuf_iterator<char>(file)),{});
+    std::wstring text(bytes.size()/2,L'\0'); memcpy(&text[0],bytes.data(),bytes.size());
+    EXPECT_EQ(text.find(L"desktopwidth:"),std::wstring::npos);
+    EXPECT_NE(text.find(L"smart sizing:i:1"),std::wstring::npos);
+    lease.abandonForTest();
+  }
+  EXPECT_TRUE(rdpClient::restoreDefaultSettingsForTest(core::utf8ToUTF16(path),config));
+  std::ifstream file(path,std::ios::binary); std::string bytes((std::istreambuf_iterator<char>(file)),{}); file.close();
+  std::wstring text(bytes.size()/2,L'\0'); memcpy(&text[0],bytes.data(),bytes.size());
+  EXPECT_NE(text.find(L"desktopwidth:i:1024"),std::wstring::npos);
+  EXPECT_NE(text.find(L"desktopheight:i:600"),std::wstring::npos);
+  EXPECT_EQ(text.find(L"smart sizing:"),std::wstring::npos);
+  std::remove(path); std::remove(config);
+}
+TEST(RdpClient, DisplayRecoveryRestoresPriorValuesAndPreservesOtherClientChanges) {
+  const char* path="rdp-auto-recovery.rdp"; const char* config="rdp-auto-recovery.json";
+  std::remove(config);
+  { std::ofstream file(path); file<<"desktopwidth:i:1024\ndesktopheight:i:600\nwinposstr:s:0,1,10,10,1050,649\ncustom:s:before\n"; }
+  {
+    rdpClient::DefaultSettingsLease lease(core::utf8ToUTF16(path),config,true);
+    { std::ofstream file(path); file<<"desktopwidth:i:2560\ndesktopheight:i:1440\nwinposstr:s:0,3,0,0,2560,1440\nsmart sizing:i:1\ndynamic resolution:i:1\nprompt for credentials:i:0\nauthentication level:i:0\ncustom:s:after\n"; }
+    lease.abandonForTest();
+  }
+  EXPECT_TRUE(rdpClient::restoreDefaultSettingsForTest(core::utf8ToUTF16(path),config));
+  std::ifstream file(path); std::string restored((std::istreambuf_iterator<char>(file)),{}); file.close();
+  EXPECT_NE(restored.find("desktopwidth:i:1024"),std::string::npos);
+  EXPECT_NE(restored.find("desktopheight:i:600"),std::string::npos);
+  EXPECT_NE(restored.find("winposstr:s:0,1,10,10,1050,649"),std::string::npos);
+  EXPECT_NE(restored.find("custom:s:after"),std::string::npos);
+  EXPECT_EQ(restored.find("2560"),std::string::npos);
+  EXPECT_EQ(restored.find("smart sizing:"),std::string::npos);
+  std::remove(path); std::remove(config);
+}
 TEST(RdpClient, MissingNativeFlagsRestoreTheExactOriginalFile) {
   const char* path="rdp-default-absent-flags.rdp";
   const std::string original="custom:s:keep without trailing newline";
