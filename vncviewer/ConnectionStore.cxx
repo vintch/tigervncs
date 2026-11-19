@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "ConnectionStore.h"
 #include "VpnProfiles.h"
+#include "ConnectionProtocol.h"
 #include <network/TcpSocket.h>
 #include <core/string.h>
 #include <algorithm>
@@ -77,6 +78,7 @@ void validate(Json::Value& document) {
         !connection["address"].isString() || !connection["username"].isString() ||
         !connection["folderId"].isString()) throw std::runtime_error("Invalid computer entry");
     vpnProfiles::validateAssociation(connection["vpn"]);
+    connectionProtocol::type(connection);
     const auto& power = connection["powerOn"];
     if (!power.isNull()) {
       if (!power.isObject() || (power["mode"] != "none" && power["mode"] != "shelly-plug"))
@@ -180,7 +182,7 @@ std::string ConnectionStore::saveFolder(const std::string& id, const std::string
 std::string ConnectionStore::saveConnection(const std::string& id, const std::string& name,
   const std::string& address, const std::string& username, const std::string& folder,
   PasswordChange change, const std::string& password, const std::string& sessionMode, const Json::Value& vpn, const Json::Value& powerOn,
-  PasswordChange shellyChange, const std::string& shellyPassword) {
+  PasswordChange shellyChange, const std::string& shellyPassword, const std::string& connectionType) {
   auto document = read();
   int index = id.empty() ? -1 : indexOf(document["connections"], id);
   auto siblings = children(document, folder);
@@ -189,6 +191,8 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
   std::string result = id.empty() ? CredentialVault::newId() : id;
   entry["id"] = result; entry["name"] = trim(name); entry["address"] = trim(address);
   entry["username"] = username; entry["folderId"] = folder;
+  if (!connectionType.empty()) entry["connectionType"] = connectionType;
+  else if (entry["connectionType"].isNull()) entry["connectionType"] = "vnc";
   if (!vpn.isNull()) { vpnProfiles::validateAssociation(vpn); entry["vpn"] = vpn; }
   if (!powerOn.isNull()) {
     if (!powerOn.isObject()) throw std::runtime_error("Invalid Power On settings");
@@ -199,7 +203,10 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
   if (!sessionMode.empty()) entry["sessionMode"] = sessionMode;
   else if (entry["sessionMode"].isNull()) entry["sessionMode"] = "current-screen";
   std::string host; int port;
-  network::getHostAndPort(entry["address"].asString().c_str(), &host, &port);
+  if (connectionProtocol::type(entry) == "rdp") {
+    auto endpoint = connectionProtocol::rdpEndpoint(entry["address"].asString());
+    host = endpoint.host; port = int(endpoint.port);
+  } else network::getHostAndPort(entry["address"].asString().c_str(), &host, &port);
   if (host.empty() || port < 1 || port > 65535) throw std::runtime_error("Invalid server address or port");
   // Validate metadata before generating or changing any credential key.
   if (index < 0) document["connections"].append(entry); else document["connections"][index] = entry;
@@ -218,7 +225,8 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
     document["connections"][position]["powerOn"]["password"] = CredentialVault::encrypt(document, result + "::shelly", shellyPassword);
   else if (shellyChange == ForgetPassword)
     document["connections"][position]["powerOn"].removeMember("password");
-  if (document["connections"][position]["sessionMode"] == "user-session" &&
+  if (connectionProtocol::type(document["connections"][position]) == "vnc" &&
+      document["connections"][position]["sessionMode"] == "user-session" &&
       (username.empty() || document["connections"][position]["password"].isNull()))
     throw std::runtime_error("User session requires a saved username and password.");
   validate(document);
@@ -285,6 +293,7 @@ bool ConnectionStore::prepareConnection(const std::string& id, const std::string
   CredentialVault::erase(result.password); result.username.clear(); result.hasPassword = false; result.sessionMode = "current-screen";
   if (id.empty()) return false;
   auto entry = connection(id);
+  if (connectionProtocol::type(entry) == "rdp") return false;
   if (!overrideMode.empty() && overrideMode != "current-screen" && overrideMode != "user-session")
     throw std::runtime_error("Invalid connection session mode");
   std::string host; int port;
@@ -308,6 +317,7 @@ bool ConnectionStore::activeCredentials(const std::string& host, int port, Conne
   int index = indexOf(document["connections"], activeId);
   if (index < 0) return false;
   const auto& entry = document["connections"][index];
+  if (connectionProtocol::type(entry) != "vnc") return false;
   if (!sameEndpoint(entry["address"].asString(), host, port)) return false;
   result.username = entry["username"].asString();
   result.sessionMode = activeMode;

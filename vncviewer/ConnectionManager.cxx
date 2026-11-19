@@ -5,6 +5,7 @@
 #include "VpnProfiles.h"
 #include "VpnUi.h"
 #include "ShellyDialog.h"
+#include "ConnectionProtocol.h"
 #include <FL/Fl.H>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Tree.H>
@@ -60,7 +61,10 @@ void ServerDialog::createManager(int top)
   entryUser = new Fl_Input(112, y, 318, 25, "Username:"); y += 30;
   entryPassword = new Fl_Secret_Input(112, y, 318, 25, "Password:"); y += 30;
   entryPassword->tooltip("Leave blank to keep an existing saved password.");
-  entrySessionMode = new Fl_Choice(112, y, 318, 25, "Session mode:"); y += 30;
+  entryConnectionType = new Fl_Choice(112, y, 100, 25, "Connection:");
+  entryConnectionType->add("VNC"); entryConnectionType->add("RDP"); entryConnectionType->value(0);
+  entryConnectionType->callback(connectionTypeChanged, this);
+  entrySessionMode = new Fl_Choice(282, y, 148, 25, "Session:"); y += 30;
   entrySessionMode->add("Current screen"); entrySessionMode->add("User session");
   entrySessionMode->value(0);
   rememberPassword = new Fl_Check_Button(112, y, 318, 24, "Save password for this Windows account");
@@ -195,6 +199,8 @@ void ServerDialog::editEntry(bool folder, bool existing)
   entryShellyPassword->value("");
   rememberPassword->value(!existing || !record["password"].isNull());
   entrySessionMode->value(existing && record["sessionMode"] == "user-session" ? 1 : 0);
+  entryConnectionType->value(existing && connectionProtocol::type(record) == "rdp" ? 1 : 0);
+  updateConnectionType();
   const auto& vpn = record["vpn"];
   associateVpn->value(vpn.isObject() && vpn.get("enabled", false) == true);
   vpnProvider->value(vpn.isObject() && vpn.get("provider", "wireguard") == "openvpn" ? 1 : 0);
@@ -229,7 +235,7 @@ void ServerDialog::editEntry(bool folder, bool existing)
   entryFolder->copy(menu.data());
   entryFolder->value(selected);
   for (Fl_Widget* widget : std::vector<Fl_Widget*>{entryAddress, entryUser, entryPassword, entrySessionMode,
-                                                 rememberPassword, associateVpn, vpnProvider, vpnProfile, entryPowerOn})
+                                                 rememberPassword, associateVpn, vpnProvider, vpnProfile, entryPowerOn, entryConnectionType})
     if (folder) widget->hide(); else widget->show();
   tree->size(tree->w(), editor->y() - tree->y() - 10);
   editor->show(); layoutPowerOnEditor(); entryName->take_focus(); redraw();
@@ -294,7 +300,8 @@ void ServerDialog::performManagerAction(const std::string& action)
         try {
           id = d->store.saveConnection(d->editingId, d->entryName->value(), d->entryAddress->value(),
             d->entryUser->value(), d->folderIds[index], change, password,
-            d->entrySessionMode->value() == 1 ? "user-session" : "current-screen", vpn, powerOn, plugChange, plugPassword);
+            d->entrySessionMode->value() == 1 ? "user-session" : "current-screen", vpn, powerOn, plugChange, plugPassword,
+            d->entryConnectionType->value() == 1 ? "rdp" : "vnc");
         } catch (...) { CredentialVault::erase(password); CredentialVault::erase(plugPassword); throw; }
         CredentialVault::erase(password); CredentialVault::erase(plugPassword);
       }
@@ -338,6 +345,7 @@ void ServerDialog::showContextMenu(Fl_Tree_Item* item)
     if (computer["id"] == selectedComputer) toolsComputer = computer;
   bool sshAvailable = powerTools::menuEnabled(toolsComputer, powerTools::available(), bool(powerJob));
   bool powerOnAvailable = shellyPower::configured(toolsComputer);
+  if (connectionProtocol::type(toolsComputer) == "rdp") menu[6].deactivate();
   if (!sshAvailable) for (int index = 12; index <= 15; ++index) menu[index].deactivate();
   if (!powerOnAvailable) menu[11].deactivate();
   if (!sshAvailable && !powerOnAvailable) menu[10].deactivate();
@@ -355,6 +363,11 @@ void ServerDialog::showContextMenu(Fl_Tree_Item* item)
 void ServerDialog::presenceTick(void* data)
 {
   auto d = static_cast<ServerDialog*>(data);
+  if (d->rdpJob && d->rdpJob->done.load(std::memory_order_acquire)) {
+    auto job = d->rdpJob; d->rdpJob.reset();
+    ConnectionStore::clearActive(); resumePresence(); d->show();
+    if (!job->error.empty()) fl_alert("%s", job->error.c_str());
+  }
   if (d->powerJob && d->powerJob->done.load(std::memory_order_acquire)) {
     bool success = d->powerJob->success; d->powerJob.reset();
     fl_message("%s", success ? "The command was sent successfully." : "The command could not be sent.");
@@ -497,6 +510,12 @@ void ServerDialog::handleVpn(Fl_Widget*, void* data) {
 }
 
 void ServerDialog::powerOnModeChanged(Fl_Widget*, void* data) { static_cast<ServerDialog*>(data)->layoutPowerOnEditor(); }
+void ServerDialog::connectionTypeChanged(Fl_Widget*, void* data) { static_cast<ServerDialog*>(data)->updateConnectionType(); }
+void ServerDialog::updateConnectionType() {
+  bool rdp = entryConnectionType->value() == 1;
+  if (rdp) entrySessionMode->deactivate(); else entrySessionMode->activate();
+  entryAddress->tooltip(rdp ? "RDP hostname or IP address, optionally followed by :port (default 3389)." : "VNC server address: host, host:display or host::port.");
+}
 void ServerDialog::layoutPowerOnEditor() {
   bool details = !editingFolder && entryPowerOn->value() == 1;
   for (Fl_Widget* widget : std::vector<Fl_Widget*>{entryShellyAddress, entryShellyUser, entryShellyPassword})

@@ -15,6 +15,7 @@ The Windows viewer additions requested for mod 1.0 are implemented:
 - Shelly Plug outlet cycling with encrypted credentials, configurable delay,
   confirmations, modal progress, cancellation and device-side restoration timer.
 - Standalone `TigerVNCs.exe` Windows build and regression/integration checks.
+- Per-computer VNC/RDP selection and external mstsc lifecycle handling.
 
 VPN control is intentionally independent of VNC connections. Selecting a
 computer, starting the viewer or clicking Connect does not activate its VPN.

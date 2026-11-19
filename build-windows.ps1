@@ -106,7 +106,7 @@ try {
         $targets = @('configargs', 'conv', 'convertlf', 'gesturehandler',
             'hostport', 'parameters', 'pixelformat', 'shortcuthandler',
             'unicode', 'emulatemb', 'h264decoder', 'scalegeometry', 'portableconfig',
-            'scaled_surface', 'clientcompatibility', 'connectionstore', 'vpnelevation')
+            'scaled_surface', 'clientcompatibility', 'connectionstore', 'vpnelevation', 'rdpclient')
         Invoke-BuildTool "$prefix/bin/cmake.exe" (@('--build', $buildDir,
             '--parallel', "$Jobs", '--target') + $targets)
         Invoke-BuildTool "$prefix/bin/ctest.exe" @('--test-dir', "$buildDir/tests/unit",
@@ -151,7 +151,8 @@ try {
             'Hidden SSH power tools using saved credentials',
             'Manual asynchronous Wireguard/OpenVPN status and control',
             'Session-long administrator access for Wireguard',
-            'Shelly Plug power cycling with cancellable delay and device backup timer')
+            'Shelly Plug power cycling with cancellable delay and device backup timer',
+            'VNC/RDP connection types with external Windows client lifecycle')
         bytes = (Get-Item -LiteralPath $outputExe).Length
         sha256 = (Get-FileHash -LiteralPath $outputExe -Algorithm SHA256).Hash
         systemDlls = $dllNames

@@ -19,6 +19,13 @@ Features added in this fork
   double-click to connect. The context menu provides creation, editing,
   deletion and sibling reordering. List visibility, folder expansion and
   ordering are remembered.
+* **VNC and RDP connection types.** Each computer can use the built-in VNC
+  viewer or Windows Remote Desktop (mstsc). RDP receives the saved server,
+  username and password without putting the password in command-line arguments.
+  The manager hides while mstsc runs and returns when it exits. The client
+  starts without an RDP file, avoiding the unsigned-connection confirmation.
+  Password and certificate prompts are suppressed using temporary native
+  client settings, which are restored when it exits.
 * **Protected saved passwords.** VNC and Shelly Plug passwords use
   AES-256-GCM with a key protected by Windows DPAPI for the current account.
   Copying the configuration alone to another account or computer does not
@@ -100,7 +107,8 @@ source revision, checksum and dependency information. The script excludes
 ``.tools``, ``build`` and ``dist`` from commits. Keep personal
 ``tigervncs.json`` files out of version control.
 
-The Windows unit suite currently contains 357 tests. Additional isolated
+The Windows unit suite includes connection-type and RDP launch/cleanup tests.
+Additional isolated
 integration checks are documented in `tests/integration/README.md
 <tests/integration/README.md>`_. General upstream build instructions remain in
 `BUILDING.txt <BUILDING.txt>`_.

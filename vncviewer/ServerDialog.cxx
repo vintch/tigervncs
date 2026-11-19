@@ -57,6 +57,7 @@
 #include "vncviewer.h"
 #include "parameters.h"
 #include "PortableSettings.h"
+#include "ConnectionProtocol.h"
 
 static core::LogWriter vlog("ServerDialog");
 
@@ -73,7 +74,7 @@ ServerDialog::ServerDialog()
   y = OUTER_MARGIN;
 
   serverName = new Fl_Suggestion_Input(
-    LBLLEFT(x, y, w() - OUTER_MARGIN*2, INPUT_HEIGHT, _("VNC server:")), {}
+    LBLLEFT(x, y, w() - OUTER_MARGIN*2, INPUT_HEIGHT, _("Server:")), {}
   );
   serverName->call_on_remove(onServerHistoryRemove, this);
   serverName->call_to_normalize(serverHistoryNormalize);
@@ -174,7 +175,7 @@ std::string ServerDialog::run(const char* servername)
     vlog.error(_("Unable to load the server history: %s"), e.what());
   }
 
-  while (dialog.shown()) Fl::wait();
+  while (dialog.shown() || dialog.rdpJob) Fl::wait(0.1);
 
   if (dialog.serverName->value() == nullptr) {
     return "";
@@ -251,7 +252,16 @@ void ServerDialog::handleConnect(Fl_Widget* /*widget*/, void *data)
   const char* servername = dialog->serverName->value();
 
   if (!servername || !servername[0]) return;
+  if (dialog->rdpJob) return;
   try {
+    if (!dialog->selectedComputer.empty() &&
+        connectionProtocol::type(dialog->store.connection(dialog->selectedComputer)) == "rdp") {
+      auto settings = rdpClient::savedSettings(dialog->store.read(), dialog->selectedComputer, servername);
+      dialog->rdpJob = rdpClient::start(settings);
+      dialog->connectionModeOverride.clear(); ConnectionStore::clearActive();
+      suspendPresence(); dialog->hide(); dialog->updatePresence();
+      return;
+    }
     // Unlock before hiding the dialog; both Connect and double-click use this path.
     ConnectionCredentials credentials;
     dialog->store.prepareConnection(dialog->selectedComputer, servername, credentials, dialog->connectionModeOverride);

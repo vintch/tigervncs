@@ -88,6 +88,9 @@ folders are created outside the executable directory.
 
 Connection recovery
 -------------------
+These timeout and recovery settings apply to the built-in VNC viewer. RDP
+connections use the external Windows client and its connection handling.
+
 Options / Network configures connection establishment timeout (default 4s),
 active session response timeout (default 4s), ICMP reply timeout (default 3s),
 ping period per computer (default 3s), minimum packet interval (default 1s),
@@ -304,3 +307,47 @@ or loses connectivity. The tested device is a Gen1 Shelly Plug S; local HTTP
 Basic and SHA-256 Digest authentication are supported. The Mac must be set to
 start when power returns. Shut down a running Mac before cycling its outlet.
 See doc/shelly-power.md for the API and detailed behavior.
+
+VNC and RDP connection types
+----------------------------
+The computer editor's Connection choice defaults to VNC for existing entries.
+RDP launches Windows' system mstsc.exe with the saved address, username and
+password. RDP uses host or host:port syntax, with port 3389 by default; it does
+not interpret a small port number as a VNC display number. The macOS Session
+choice and Connect to overrides are disabled for RDP entries.
+
+The connectionType field is vnc or rdp. Changing only the type preserves all
+other saved fields, including the encrypted password and macOS session mode.
+Credentials are handed to RDP only when the server field matches the saved
+RDP endpoint. Editing it to a different server does not reuse the password.
+Missing credentials allow the Windows client to ask for them normally.
+
+The main window hides while the launched mstsc process exists, with ICMP
+monitoring suspended. Its completion restores the same window and selection.
+Launch errors also return to the manager. No remote shutdown, shell command
+or desktop input is performed as part of launching or closing the client.
+
+The launcher passes only /v:host[:port] and window dimensions to mstsc. No
+RDP connection file is created, so Windows' unsigned-RDP-file confirmation
+is not triggered. Saved credentials are supplied as a temporary Windows
+logon-session TERMSRV credential, never as command-line arguments. After
+mstsc exits, the previous credential is restored or the temporary entry is
+removed. Concurrent external credential changes are preserved. Credentials
+are not made persistent across Windows logons.
+
+mstsc /v also reads its own Documents/Default.rdp preferences. For the lifetime
+of the launched client, TigerVNCs temporarily sets its password-prompt and
+server-authentication flags to zero. Missing flags or a missing Default.rdp
+are created temporarily. Other preferences remain intact. On normal client
+completion or a failed launch, prior values are restored and temporary additions
+are removed, preserving unrelated changes.
+This avoids both the forced password prompt and server certificate warnings.
+Other mstsc instances started during this interval use the same native defaults.
+No machine-wide RDP policy or trusted-publisher certificate is installed.
+
+Persistent TigerVNCs preferences and encrypted connection records remain in
+tigervncs.json. mstsc is a separate Windows application and can maintain its
+own history, native preferences, caching and resource-redirection settings.
+VNC display/compression settings do not configure the external RDP client.
+
+Reference: https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/remotepc/understanding-security-warnings

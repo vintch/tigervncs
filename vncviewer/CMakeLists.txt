@@ -17,6 +17,8 @@ add_executable(vncviewer
   PowerTools.cxx
   ShellyPower.cxx
   ShellyDialog.cxx
+  RdpClient.cxx
+  RdpDefaults.cxx
   CredentialVault.cxx
   fltk/Fl_Monitor_Arrangement.cxx
   fltk/Fl_Suggestion_Item_.cxx
@@ -99,7 +101,7 @@ if(GNUTLS_FOUND)
 endif()
 
 if(WIN32)
-  target_link_libraries(vncviewer PRIVATE msimg32 winmm bcrypt crypt32 iphlpapi winhttp)
+  target_link_libraries(vncviewer PRIVATE msimg32 winmm bcrypt crypt32 iphlpapi winhttp advapi32)
 elseif(APPLE)
   target_link_libraries(vncviewer PRIVATE "-framework Cocoa")
   target_link_libraries(vncviewer PRIVATE "-framework Carbon")
