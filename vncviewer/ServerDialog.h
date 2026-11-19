@@ -70,7 +70,7 @@ private:
   Fl_Group *managerPane, *editor;
   Fl_Tree* tree;
   Fl_Input *entryName, *entryAddress, *entryUser, *entryPassword;
-  Fl_Choice* entryFolder;
+  Fl_Choice *entryFolder, *entrySessionMode;
   Fl_Check_Button* rememberPassword;
   Fl_Button *managerButton;
   std::unique_ptr<PresenceMonitor> presence;
@@ -81,6 +81,7 @@ private:
   std::vector<std::string> folderIds;
   std::list<std::string> folderLabels;
   std::string selectedId, selectedComputer, editingId;
+  std::string connectionModeOverride;
   bool selectedFolder = false, editingFolder = false, rebuilding = false;
   bool expanded = false;
   int collapsedHeight;

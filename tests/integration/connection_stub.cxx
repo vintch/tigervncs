@@ -19,8 +19,10 @@ int runConnectionStub(const std::string& address) {
   result["usernameMatches"] = expectedUser && credentials.username == expectedUser;
   result["passwordMatches"] = expectedPassword && credentials.hasPassword && credentials.password == expectedPassword;
   result["savedProfileUsed"] = active;
+  const char* expectedMode = std::getenv("VNC_TEST_SESSION_MODE");
+  result["sessionModeMatches"] = !expectedMode || credentials.sessionMode == expectedMode;
   bool passed = active && result["addressMatches"].asBool() &&
-    result["usernameMatches"].asBool() && result["passwordMatches"].asBool();
+    result["usernameMatches"].asBool() && result["passwordMatches"].asBool() && result["sessionModeMatches"].asBool();
   result["passed"] = passed;
   // Only booleans, no plaintext credentials in the test artifact.
   std::ofstream output(PortableConfig::executablePath() + ".stub-result");

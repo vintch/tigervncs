@@ -109,3 +109,23 @@ Apple disconnects clients which request 8-bit pixel formats. Full color remains
 available, and reduced color uses 16-bit RGB565 on the wire. The new 16-bit
 choice is also available for other VNC servers. Existing saved 8-bit settings
 automatically use 16-bit for Apple only. Other servers keep their 8-bit modes.
+
+macOS session selection
+-----------------------
+The computer editor offers Current screen (default) and User session. The JSON
+sessionMode field stores current-screen or user-session. Missing/null fields
+default to Current screen. User session requires a saved username and password;
+it uses Apple account authentication and requests that account's desktop.
+macOS may reuse an existing desktop for the account, including its console
+desktop if that same account is already active there.
+
+Connect and double-click use the saved mode. A computer's context menu also
+offers Connect to / User personal session and Connect to / Current session.
+These are one-attempt overrides; they do not edit the saved preference. Retry
+keeps the selected mode, and returning to the main window clears the override.
+
+Apple session selection is negotiated before framebuffer setup. Unsupported
+or denied User session requests report an error rather than silently sharing
+the console. Ordinary non-Apple Current screen connections retain standard RFB.
+No new macOS accounts are created, no logout is requested, and the stored
+credential key and ciphertext are preserved when only the mode is edited.

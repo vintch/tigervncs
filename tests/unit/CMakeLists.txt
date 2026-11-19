@@ -13,7 +13,7 @@ endif()
 
 enable_testing()
 
-add_executable(clientcompatibility clientcompatibility.cxx)
+add_executable(clientcompatibility clientcompatibility.cxx applesession.cxx)
 target_link_libraries(clientcompatibility PRIVATE rfbclient GTest::gtest_main)
 gtest_discover_tests(clientcompatibility)
 
@@ -27,6 +27,10 @@ target_link_libraries(portableconfig PRIVATE core GTest::gtest_main jsoncpp_stat
 gtest_discover_tests(portableconfig)
 
 if(WIN32)
+  add_executable(apple_session_probe EXCLUDE_FROM_ALL ../integration/apple_session_probe.cxx
+    ../../vncviewer/ConnectionStore.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)
+  target_include_directories(apple_session_probe SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
+  target_link_libraries(apple_session_probe PRIVATE rfbclient network core jsoncpp_static ${FLTK_LIBRARIES} bcrypt crypt32)
   add_executable(presence_probe EXCLUDE_FROM_ALL ../integration/presence_probe.cxx
     ../../vncviewer/PresenceMonitor.cxx ../../vncviewer/PresencePing.cxx)
   target_link_libraries(presence_probe PRIVATE network core jsoncpp_static iphlpapi)

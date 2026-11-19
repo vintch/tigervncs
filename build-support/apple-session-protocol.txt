@@ -1,0 +1,31 @@
+Apple session-selection interoperability notes
+=============================================
+
+The implementation is original C++ for this fork. Wire layouts were studied
+in the primary noVNC-ARD implementation (MPL-2.0), then checked against the
+owner's macOS Screen Sharing server. No third-party source files are vendored.
+
+References:
+https://github.com/peetinc/noVNC-ARD/blob/main/ard/ard-patch.js
+https://github.com/peetinc/noVNC-ARD/blob/main/ard/ard-constants.js
+https://github.com/peetinc/noVNC-ARD/blob/main/ard/session-select.js
+
+Observed with saved-account DH authentication (type 30): RFB 3.889 plus enhanced
+ClientInit (0xc1 when shared) produces an extended ServerInit name. Its flags
+include session selection (bit 2); the following bounded SessionInfo advertises
+allowed commands. Command 1 requests the console and command 2 requests the
+authenticated account's session. The 74-byte command includes the server's
+console username as an opaque field; this is not a replacement login identity.
+The authenticated identity is established before session selection via the
+saved username/password. Status 0 grants a session; status 4 grants after a
+pending status. Pending statuses 2/3 remain under the connection watchdog.
+
+Both commands were granted by the owner's server, and complete ZRLE frames
+were decoded through the production CConnection implementation. The checker
+sends no keyboard or pointer events and saves no framebuffer contents.
+
+The server may reuse an existing session for the authenticated account; the
+client does not create OS users, log anyone out, or force a duplicate session.
+This implements standard framebuffer sessions, without High Performance media,
+new proprietary codecs, encrypted-control extensions or a fallback to another
+session mode after a denial.

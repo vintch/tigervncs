@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <cstring>
 
 #include <core/LogWriter.h>
 #include <core/i18n.h>
@@ -173,6 +174,8 @@ bool CConnection::processMsg()
   case RFBSTATE_SECURITY_RESULT:  return processSecurityResultMsg(); break;
   case RFBSTATE_SECURITY_REASON:  return processSecurityReasonMsg(); break;
   case RFBSTATE_INITIALISATION:   return processInitMsg();           break;
+  case RFBSTATE_APPLE_SESSION_INFO: return processAppleSessionInfo(); break;
+  case RFBSTATE_APPLE_SESSION_RESULT: return processAppleSessionResult(); break;
   case RFBSTATE_NORMAL:           return reader_->readMsg();         break;
   case RFBSTATE_CLOSING:
     throw std::logic_error("CConnection::processMsg: Called while closing");
@@ -207,6 +210,8 @@ bool CConnection::processVersionMsg()
   server.setVersion(majorVersion, minorVersion);
   // Retain the Apple marker before normalizing the protocol to RFB 3.8.
   appleServer = appleProtocolVersion(majorVersion, minorVersion);
+  if (appleSessionMode == 2 && !appleServer)
+    throw protocol_error(_("User sessions require a macOS Screen Sharing server."));
 
   vlog.info(_("Server supports RFB protocol version %d.%d"),
             server.majorVersion, server.minorVersion);
@@ -227,6 +232,7 @@ bool CConnection::processVersionMsg()
 
   sprintf(verStr, "RFB %03d.%03d\n",
           server.majorVersion, server.minorVersion);
+  if (appleServer && appleSessionMode) std::memcpy(verStr, "RFB 003.889\n", 12);
   os->writeBytes((const uint8_t*)verStr, 12);
   os->flush();
 
@@ -247,6 +253,9 @@ bool CConnection::processSecurityTypesMsg()
 
   std::list<uint8_t> secTypes;
   secTypes = security.GetEnabledSecTypes();
+  if (appleSessionMode == 2) {
+    secTypes.remove_if([](uint8_t type) { return type != secTypeDH; });
+  }
 
   if (server.isVersion(3,3)) {
 
@@ -399,15 +408,96 @@ bool CConnection::processSecurityReasonMsg()
 
 bool CConnection::processInitMsg()
 {
+  if (appleServer && appleSessionMode && csecurity->getType() == secTypeDH) {
+    if (!is->hasData(24)) return false;
+    is->setRestorePoint();
+    int width = is->readU16(), height = is->readU16();
+    PixelFormat pf; pf.read(is);
+    auto length = is->readU32();
+    if (length > 1024 * 1024) throw protocol_error(_("Apple server name is too long."));
+    if (!is->hasDataOrRestore(length)) return false;
+    is->clearRestorePoint();
+    std::string name(length, '\0');
+    if (length) is->readBytes(reinterpret_cast<uint8_t*>(&name[0]), length);
+    uint32_t flags = 0;
+    if (!name.empty() && name[0] == '\0') {
+      if (length < 22) throw protocol_error(_("Invalid Apple session header."));
+      for (int index = 2; index < 6; ++index) flags = (flags << 8) | uint8_t(name[index]);
+      auto last = name.find_last_of('\0');
+      name = last == std::string::npos ? name.substr(22) : name.substr(std::max<size_t>(22, last + 1));
+    }
+    if (!core::isValidUTF8(name.c_str())) name = core::latin1ToUTF8(name.c_str());
+    appleWidth = width; appleHeight = height; applePixelFormat = pf; appleDesktopName = name;
+    if (appleSessionMode == 2 && (flags & 8)) throw protocol_error(_("This Mac does not allow a user session."));
+    if (flags & 4) { state_ = RFBSTATE_APPLE_SESSION_INFO; return true; }
+    if (appleSessionMode == 2) throw protocol_error(_("This Mac did not offer user-session selection."));
+    finishAppleSession();
+    return true;
+  }
   vlog.debug("Reading server initialisation");
   return reader_->readServerInit();
+}
+
+bool CConnection::processAppleSessionInfo()
+{
+  if (!is->hasData(2)) return false;
+  is->setRestorePoint();
+  auto length = is->readU16();
+  if (length < 10 || length > 4096) throw protocol_error(_("Invalid Apple session information length."));
+  if (!is->hasDataOrRestore(length)) return false;
+  is->clearRestorePoint();
+  auto version = is->readU16(); auto allowed = is->readU32(); is->skip(4);
+  std::vector<uint8_t> user(length - 10); is->readBytes(user.data(), user.size());
+  if (version != 1) throw protocol_error(_("Unsupported Apple session information version."));
+  size_t userLength = 0;
+  while (userLength < user.size() && user[userLength]) ++userLength;
+  if (userLength > 63) throw protocol_error(_("Apple console username is too long."));
+  uint8_t command = appleSessionMode == 2 ? 2 : 1;
+  if (command == 1 && userLength == 0 && !(allowed & 2)) command = 0;
+  if (!(allowed & (1u << command))) throw protocol_error(_("The requested session is not allowed by this Mac."));
+  uint8_t username[64]{};
+  if (userLength) std::memcpy(username, user.data(), userLength);
+  os->writeU16(72); os->writeU16(1); os->writeU32(0);
+  os->writeU8(command); os->writeU8(0); os->writeBytes(username, sizeof(username)); os->flush();
+  vlog.info("Requested Apple %s session", command == 2 ? "user" : "current screen");
+  state_ = RFBSTATE_APPLE_SESSION_RESULT;
+  return true;
+}
+
+bool CConnection::processAppleSessionResult()
+{
+  if (!is->hasData(2)) return false;
+  is->setRestorePoint();
+  auto length = is->readU16();
+  if (length < 6 || length > 4096) throw protocol_error(_("Invalid Apple session result length."));
+  if (!is->hasDataOrRestore(length)) return false;
+  is->clearRestorePoint();
+  auto version = is->readU16(); auto status = is->readU32(); is->skip(length - 6);
+  if (version != 1) throw protocol_error(_("Unsupported Apple session result version."));
+  if (status == 2 || status == 3) return true;
+  if (status != 0 && status != 4) throw protocol_error(_("The requested session was denied by this Mac."));
+  vlog.info("Apple session selection granted");
+  finishAppleSession();
+  return true;
+}
+
+void CConnection::finishAppleSession()
+{
+  if (appleWidth == 0 || appleHeight == 0) {
+    // Ask for display geometry, then bootstrap a nonzero viewport. Standard
+    // DesktopSize updates replace it; never request a zero-sized framebuffer.
+    os->writeU8(13); os->writeU8(1); os->writeU16(0); os->writeU32(0); os->flush();
+  }
+  serverInit(std::max(1, appleWidth), std::max(1, appleHeight), applePixelFormat, appleDesktopName.c_str());
 }
 
 void CConnection::securityCompleted()
 {
   state_ = RFBSTATE_INITIALISATION;
   vlog.debug("Authentication success!");
-  writer_->writeClientInit(shared);
+  if (appleServer && appleSessionMode && csecurity->getType() == secTypeDH) {
+    os->writeU8(0xc0 | (shared ? 1 : 0)); os->flush();
+  } else writer_->writeClientInit(shared);
 }
 
 void CConnection::close()

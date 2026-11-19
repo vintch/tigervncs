@@ -195,6 +195,9 @@ void CConn::connect(const char* vncServerName, network::Socket* socket)
 #endif
       {
         network::getHostAndPort(vncServerName, &serverHost, &serverPort);
+        ConnectionCredentials profile;
+        ConnectionStore::activeCredentials(serverHost, serverPort, profile);
+        setAppleSessionMode(profile.sessionMode == "user-session" ? 2 : 1);
 
         sock = new network::TcpSocket(serverHost.c_str(), serverPort, connectionTimeoutMs);
         vlog.info(_("Connected to host %s port %d"),
@@ -374,6 +377,8 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
   assert(password);
   ConnectionCredentials credentials;
   bool savedProfile = ConnectionStore::activeCredentials(serverHost, serverPort, credentials);
+  if (credentials.sessionMode == "user-session" && (!savedProfile || !credentials.hasPassword))
+    throw rfb::protocol_error(_("User session requires valid saved credentials. Return to the initial window and edit this computer."));
   if (savedProfile && credentials.hasPassword) {
     if (user) *user = credentials.username;
     *password = credentials.password;

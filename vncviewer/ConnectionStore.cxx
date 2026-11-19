@@ -9,6 +9,7 @@
 #include <stdexcept>
 
 std::string ConnectionStore::activeId, ConnectionStore::activeAddress, ConnectionStore::activePath;
+std::string ConnectionStore::activeMode = "current-screen";
 bool ConnectionStore::activePasswordAllowed = true;
 
 namespace {
@@ -79,6 +80,8 @@ void validate(Json::Value& document) {
     text(connection["name"].asString(), "computer name", 256);
     text(connection["address"].asString(), "server address", 2048);
     text(connection["username"].asString(), "username", 1024, true);
+    if (!connection["sessionMode"].isNull() && connection["sessionMode"] != "current-screen" &&
+        connection["sessionMode"] != "user-session") throw std::runtime_error("Invalid connection session mode");
     if (!ids.insert(id).second) throw std::runtime_error("Duplicate saved identifier");
     auto parent = connection["folderId"].asString();
     if (!parent.empty() && !parents.count(parent)) throw std::runtime_error("Computer folder does not exist");
@@ -162,7 +165,7 @@ std::string ConnectionStore::saveFolder(const std::string& id, const std::string
 }
 std::string ConnectionStore::saveConnection(const std::string& id, const std::string& name,
   const std::string& address, const std::string& username, const std::string& folder,
-  PasswordChange change, const std::string& password) {
+  PasswordChange change, const std::string& password, const std::string& sessionMode) {
   auto document = read();
   int index = id.empty() ? -1 : indexOf(document["connections"], id);
   auto siblings = children(document, folder);
@@ -171,6 +174,8 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
   std::string result = id.empty() ? CredentialVault::newId() : id;
   entry["id"] = result; entry["name"] = trim(name); entry["address"] = trim(address);
   entry["username"] = username; entry["folderId"] = folder;
+  if (!sessionMode.empty()) entry["sessionMode"] = sessionMode;
+  else if (entry["sessionMode"].isNull()) entry["sessionMode"] = "current-screen";
   std::string host; int port;
   network::getHostAndPort(entry["address"].asString().c_str(), &host, &port);
   if (host.empty() || port < 1 || port > 65535) throw std::runtime_error("Invalid server address or port");
@@ -187,6 +192,9 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
     document["connections"][position]["password"] = CredentialVault::encrypt(document, result, password);
   else if (change == ForgetPassword)
     document["connections"][position].removeMember("password");
+  if (document["connections"][position]["sessionMode"] == "user-session" &&
+      (username.empty() || document["connections"][position]["password"].isNull()))
+    throw std::runtime_error("User session requires a saved username and password.");
   file.write(document);
   return result;
 }
@@ -242,23 +250,31 @@ bool ConnectionStore::sameEndpoint(const std::string& address, const std::string
 void ConnectionStore::activate(const std::string& id, const std::string& address) {
   clearActive(); activeId = id; activeAddress = address; activePath = PortableConfig::executablePath();
 }
-void ConnectionStore::clearActive() { activeId.clear(); activeAddress.clear(); activePath.clear(); activePasswordAllowed = true; }
+void ConnectionStore::clearActive() { activeId.clear(); activeAddress.clear(); activePath.clear(); activeMode = "current-screen"; activePasswordAllowed = true; }
 void ConnectionStore::rejectActivePassword() { activePasswordAllowed = false; }
 bool ConnectionStore::prepareConnection(const std::string& id, const std::string& address,
-                                         ConnectionCredentials& result) const {
+                                         ConnectionCredentials& result, const std::string& overrideMode) const {
   clearActive();
-  CredentialVault::erase(result.password); result.username.clear(); result.hasPassword = false;
+  CredentialVault::erase(result.password); result.username.clear(); result.hasPassword = false; result.sessionMode = "current-screen";
   if (id.empty()) return false;
   auto entry = connection(id);
+  if (!overrideMode.empty() && overrideMode != "current-screen" && overrideMode != "user-session")
+    throw std::runtime_error("Invalid connection session mode");
   std::string host; int port;
   network::getHostAndPort(address.c_str(), &host, &port);
   if (!sameEndpoint(entry["address"].asString(), host, port)) return false;
   activeId = id; activeAddress = address; activePath = path;
-  try { return activeCredentials(host, port, result); }
+  activeMode = overrideMode.empty() ? (entry["sessionMode"] == "user-session" ? "user-session" : "current-screen") : overrideMode;
+  try {
+    bool active = activeCredentials(host, port, result);
+    if (activeMode == "user-session" && (!active || !result.hasPassword || result.username.empty()))
+      throw std::runtime_error("User session requires a saved username and password. Edit this computer first.");
+    return active;
+  }
   catch (...) { clearActive(); throw; }
 }
 bool ConnectionStore::activeCredentials(const std::string& host, int port, ConnectionCredentials& result) {
-  CredentialVault::erase(result.password); result.username.clear(); result.hasPassword = false;
+  CredentialVault::erase(result.password); result.username.clear(); result.hasPassword = false; result.sessionMode = "current-screen";
   if (activeId.empty() || !sameEndpoint(activeAddress, host, port)) return false;
   ConnectionStore store(activePath);
   auto document = store.read();
@@ -267,6 +283,7 @@ bool ConnectionStore::activeCredentials(const std::string& host, int port, Conne
   const auto& entry = document["connections"][index];
   if (!sameEndpoint(entry["address"].asString(), host, port)) return false;
   result.username = entry["username"].asString();
+  result.sessionMode = activeMode;
   result.hasPassword = activePasswordAllowed && !entry["password"].isNull();
   if (result.hasPassword)
     result.password = CredentialVault::decrypt(document, activeId, entry["password"]);

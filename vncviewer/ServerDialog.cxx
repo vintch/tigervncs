@@ -312,9 +312,11 @@ void ServerDialog::handleConnect(Fl_Widget* /*widget*/, void *data)
   try {
     // Unlock before hiding the dialog; both Connect and double-click use this path.
     ConnectionCredentials credentials;
-    dialog->store.prepareConnection(dialog->selectedComputer, servername, credentials);
+    dialog->store.prepareConnection(dialog->selectedComputer, servername, credentials, dialog->connectionModeOverride);
+    dialog->connectionModeOverride.clear();
   } catch (std::exception& e) {
     ConnectionStore::clearActive();
+    dialog->connectionModeOverride.clear();
     fl_alert("Unable to use this saved computer:\n\n%s", e.what());
     return;
   }

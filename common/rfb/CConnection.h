@@ -75,6 +75,8 @@ namespace rfb {
     // server upon initialisation.
     void setShared(bool s) { shared = s; }
     bool isAppleServer() const { return appleServer; }
+    // 0 retains generic RFB behavior; 1 selects the console, 2 the authenticated user's session.
+    void setAppleSessionMode(int mode) { appleSessionMode = mode; }
 
     // setFramebuffer configures the PixelBuffer that the CConnection
     // should render all pixel data in to. Note that the CConnection
@@ -173,6 +175,8 @@ namespace rfb {
       RFBSTATE_SECURITY_RESULT,
       RFBSTATE_SECURITY_REASON,
       RFBSTATE_INITIALISATION,
+      RFBSTATE_APPLE_SESSION_INFO,
+      RFBSTATE_APPLE_SESSION_RESULT,
       RFBSTATE_NORMAL,
       RFBSTATE_CLOSING,
       RFBSTATE_INVALID
@@ -332,6 +336,9 @@ namespace rfb {
     bool processSecurityResultMsg();
     bool processSecurityReasonMsg();
     bool processInitMsg();
+    bool processAppleSessionInfo();
+    bool processAppleSessionResult();
+    void finishAppleSession();
     void throwAuthError();
     void securityCompleted();
 
@@ -347,6 +354,10 @@ namespace rfb {
     bool shared;
     stateEnum state_;
     bool appleServer;
+    int appleSessionMode = 0;
+    int appleWidth = 0, appleHeight = 0;
+    PixelFormat applePixelFormat;
+    std::string appleDesktopName;
 
     std::string serverName;
 

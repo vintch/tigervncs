@@ -14,7 +14,7 @@ function(tigervncs_static_dependencies)
   separate_arguments(private_libraries UNIX_COMMAND "${private_libraries}")
   # Resolve transitive dependencies, including cyclic references, after the
   # libraries selected by the upstream find modules.
-  foreach(binary vncviewer vncviewer_manager_test vncviewer_lifecycle_test clientcompatibility)
+  foreach(binary vncviewer vncviewer_manager_test vncviewer_lifecycle_test clientcompatibility apple_session_probe)
     if(TARGET ${binary})
       target_link_libraries(${binary} PRIVATE
         -Wl,--start-group ${private_libraries} -Wl,--end-group)

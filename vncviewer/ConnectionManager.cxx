@@ -48,7 +48,7 @@ void ServerDialog::createManager(int top)
   tree->selectmode(FL_TREE_SELECT_SINGLE);
   tree->connectorstyle(FL_TREE_CONNECTOR_NONE);
   tree->callback(treeAction, this);
-  editor = new Fl_Group(15, top + managerPane->h() - 249, w() - 30, 234);
+  editor = new Fl_Group(15, top + managerPane->h() - 279, w() - 30, 264);
   int y = editor->y();
   entryName = new Fl_Input(112, y, 318, 25, "Name:"); y += 30;
   entryFolder = new Fl_Choice(112, y, 318, 25, "Folder:"); y += 30;
@@ -56,6 +56,9 @@ void ServerDialog::createManager(int top)
   entryUser = new Fl_Input(112, y, 318, 25, "Username:"); y += 30;
   entryPassword = new Fl_Secret_Input(112, y, 318, 25, "Password:"); y += 30;
   entryPassword->tooltip("Leave blank to keep an existing saved password.");
+  entrySessionMode = new Fl_Choice(112, y, 318, 25, "Session mode:"); y += 30;
+  entrySessionMode->add("Current screen"); entrySessionMode->add("User session");
+  entrySessionMode->value(0);
   rememberPassword = new Fl_Check_Button(112, y, 318, 24, "Save password for this Windows account");
   rememberPassword->labelsize(12); y += 31;
   auto b = new Fl_Button(198, y, 110, 27, "Save entry"); b->callback(managerAction, this);
@@ -163,6 +166,7 @@ void ServerDialog::editEntry(bool folder, bool existing)
   entryUser->value(existing && !folder ? record["username"].asCString() : "");
   entryPassword->value("");
   rememberPassword->value(!existing || !record["password"].isNull());
+  entrySessionMode->value(existing && record["sessionMode"] == "user-session" ? 1 : 0);
   entryFolder->clear(); folderIds.clear(); folderLabels.clear();
   std::vector<Fl_Menu_Item> menu;
   auto addFolder = [&](const std::string& id, const std::string& label) {
@@ -192,7 +196,7 @@ void ServerDialog::editEntry(bool folder, bool existing)
   menu.push_back(Fl_Menu_Item{});
   entryFolder->copy(menu.data());
   entryFolder->value(selected);
-  for (Fl_Widget* widget : std::vector<Fl_Widget*>{entryAddress, entryUser, entryPassword,
+  for (Fl_Widget* widget : std::vector<Fl_Widget*>{entryAddress, entryUser, entryPassword, entrySessionMode,
                                                  rememberPassword})
     if (folder) widget->hide(); else widget->show();
   tree->size(tree->w(), editor->y() - tree->y() - 10);
@@ -216,6 +220,10 @@ void ServerDialog::performManagerAction(const std::string& action)
     else if (action == "New folder") d->editEntry(true, false);
     else if (action == "Edit" && !d->selectedId.empty()) d->editEntry(d->selectedFolder, true);
     else if (action == "Cancel edit") d->closeEditor();
+    else if ((action == "User personal session" || action == "Current session") && !d->selectedComputer.empty()) {
+      d->connectionModeOverride = action == "User personal session" ? "user-session" : "current-screen";
+      handleConnect(nullptr, d);
+    }
     else if ((action == "Move up" || action == "Move down") && !d->selectedId.empty()) {
       auto selected = d->selectedId;
       d->store.move(selected, d->selectedFolder, action == "Move up" ? -1 : 1);
@@ -239,7 +247,8 @@ void ServerDialog::performManagerAction(const std::string& action)
         std::string password = d->entryPassword->value();
         try {
           id = d->store.saveConnection(d->editingId, d->entryName->value(), d->entryAddress->value(),
-            d->entryUser->value(), d->folderIds[index], change, password);
+            d->entryUser->value(), d->folderIds[index], change, password,
+            d->entrySessionMode->value() == 1 ? "user-session" : "current-screen");
         } catch (...) { CredentialVault::erase(password); throw; }
         CredentialVault::erase(password);
       }
@@ -264,11 +273,16 @@ void ServerDialog::showContextMenu(Fl_Tree_Item* item)
     {"Edit", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {"Delete", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
     {"Move up", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-    {"Move down", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"Move down", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
+    {"Connect to", 0, nullptr, nullptr, FL_SUBMENU, 0, 0, 0, 0},
+    {"User personal session", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"Current session", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}
   };
   if (!entry) menu[2].label(nullptr);
   else {
+    if (entry->folder) { menu[5].flags &= ~FL_MENU_DIVIDER; menu[6].label(nullptr); }
     if (!ConnectionStore::canMove(managerData, selectedId, selectedFolder, -1)) menu[4].deactivate();
     if (!ConnectionStore::canMove(managerData, selectedId, selectedFolder, 1)) menu[5].deactivate();
   }

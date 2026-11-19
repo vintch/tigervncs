@@ -8,6 +8,7 @@
 struct ConnectionCredentials {
   std::string username, password;
   bool hasPassword = false;
+  std::string sessionMode = "current-screen";
   ~ConnectionCredentials() { CredentialVault::erase(password); }
 };
 
@@ -24,10 +25,11 @@ public:
   std::string saveFolder(const std::string& id, const std::string& name, const std::string& parent);
   std::string saveConnection(const std::string& id, const std::string& name,
     const std::string& address, const std::string& username, const std::string& folder,
-    PasswordChange change, const std::string& password);
+    PasswordChange change, const std::string& password, const std::string& sessionMode = "");
   void remove(const std::string& id, bool folder);
   Json::Value connection(const std::string& id) const;
-  bool prepareConnection(const std::string& id, const std::string& address, ConnectionCredentials& result) const;
+  bool prepareConnection(const std::string& id, const std::string& address, ConnectionCredentials& result,
+                         const std::string& overrideMode = "") const;
   static std::string folderPath(const Json::Value& document, const std::string& id);
   static bool sameEndpoint(const std::string& address, const std::string& host, int port);
   static void activate(const std::string& id, const std::string& address);
@@ -37,7 +39,7 @@ public:
 private:
   PortableConfig file;
   std::string path;
-  static std::string activeId, activeAddress, activePath;
+  static std::string activeId, activeAddress, activePath, activeMode;
   static bool activePasswordAllowed;
 };
 #endif

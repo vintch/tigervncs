@@ -145,7 +145,8 @@ try {
             'macOS RGB565 compatibility', 'Connection manager with nested folders',
             'AES-256-GCM passwords with Windows account protected key',
             'Four-second connection deadline and return to connection manager',
-            'Context menu, persistent sibling order and folder state', 'Rate-limited ICMP presence indicators')
+            'Context menu, persistent sibling order and folder state', 'Rate-limited ICMP presence indicators',
+            'Apple current screen and authenticated user session selection')
         bytes = (Get-Item -LiteralPath $outputExe).Length
         sha256 = (Get-FileHash -LiteralPath $outputExe -Algorithm SHA256).Hash
         systemDlls = $dllNames

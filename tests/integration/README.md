@@ -49,3 +49,14 @@ events plus final online states. Include only the intended test targets, with
 no credential fields. Verify at least 1000 ms between consecutive send events
 and at least 3000 ms between sends for each ID. Interactive context-menu tests
 should use a viewer/configuration copy under `build/` to preserve user data.
+
+For explicitly authorized live Apple checks, build `apple_session_probe` and
+pass a config file path, saved computer ID and current-screen or user-session.
+It uses that profile's encrypted credentials and production CConnection code,
+then exits after decoding one complete framebuffer update. It sends no keyboard
+or pointer input and stores no image or plaintext credentials. Use a supported
+reachable Mac and require sessionGranted=true and framebufferDecoded=true.
+
+The GUI stub also accepts VNC_TEST_SESSION_MODE (current-screen/user-session)
+and records sessionModeMatches. Use synthetic credentials to verify both the
+saved editor preference and context-menu overrides without contacting a Mac.

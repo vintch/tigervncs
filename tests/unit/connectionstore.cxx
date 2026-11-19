@@ -240,3 +240,34 @@ TEST_F(ConnectionStoreTest, FolderStatePersistsAndOnlyOpenAncestorsExposeCompute
   populateConnectionTree(tree, store.read(), entries);
   EXPECT_EQ(visibleConnectionIds(tree), (std::vector<std::string>{nested, root}));
 }
+
+TEST_F(ConnectionStoreTest, SavedSessionModeAndTemporaryOverridesKeepCredentialBinding) {
+  ConnectionStore store(path);
+  auto id = store.saveConnection("", "Mac", "127.0.0.1", "test-user", "", ConnectionStore::SetPassword,
+                                  "synthetic", "user-session");
+  ConnectionCredentials credentials;
+  ASSERT_TRUE(store.prepareConnection(id, "127.0.0.1", credentials));
+  EXPECT_EQ(credentials.sessionMode, "user-session"); EXPECT_EQ(credentials.password, "synthetic");
+  ASSERT_TRUE(store.prepareConnection(id, "127.0.0.1", credentials, "current-screen"));
+  EXPECT_EQ(credentials.sessionMode, "current-screen");
+  EXPECT_EQ(store.connection(id)["sessionMode"], "user-session");
+  EXPECT_FALSE(store.prepareConnection(id, "127.0.0.2", credentials, "user-session"));
+  EXPECT_TRUE(credentials.password.empty()); EXPECT_EQ(credentials.sessionMode, "current-screen");
+  auto original = store.read();
+  EXPECT_THROW(store.saveConnection(id, "Mac", "127.0.0.1", "test-user", "",
+    ConnectionStore::ForgetPassword, "", "user-session"), std::runtime_error);
+  EXPECT_EQ(store.read(), original);
+  original["connections"][0].removeMember("sessionMode"); PortableConfig(path).write(original);
+  ASSERT_TRUE(store.prepareConnection(id, "127.0.0.1", credentials));
+  EXPECT_EQ(credentials.sessionMode, "current-screen");
+  ConnectionStore::clearActive();
+}
+
+TEST_F(ConnectionStoreTest, UserSessionCannotProceedWithoutSavedCredentials) {
+  ConnectionStore store(path);
+  auto id = store.saveConnection("", "Mac", "127.0.0.1", "", "", ConnectionStore::ForgetPassword, "");
+  ConnectionCredentials credentials;
+  EXPECT_THROW(store.prepareConnection(id, "127.0.0.1", credentials, "user-session"), std::runtime_error);
+  EXPECT_FALSE(ConnectionStore::activeCredentials("127.0.0.1", 5900, credentials));
+  EXPECT_EQ(store.connection(id)["sessionMode"], "current-screen");
+}
