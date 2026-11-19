@@ -160,3 +160,50 @@ saved profiles remain selectable and are marked unavailable. Missing clients,
 access-denied folders and CLI failures leave the UI usable and are explained
 in the profile tooltip. Profile discovery never activates or disconnects a VPN.
 The standalone output artifact is dist/TigerVNCs.exe.
+
+SSH power tools
+---------------
+Options / Tools stores PlinkExecutable (default C:\Program Files\PuTTY\plink.exe)
+in the viewer section of tigervncs.json. A computer's Tools submenu offers
+Power Off, Reboot, Force Power Off and Force Reboot. The submenu and all four
+actions are disabled if plink is missing/not executable, either the username
+or encrypted saved password is absent, or another power action is pending.
+Ping status is purely informational and is never consulted for these actions.
+
+Every action asks for confirmation, with an additional unsaved-data notice for
+Force. Only the selected saved computer's own credentials are decrypted, from
+an immutable snapshot taken before confirmation. SSH uses port 22 on the host
+part of the VNC address; its VNC port/display number is not an SSH port.
+
+The Mac must allow Remote Login, and the saved account must be permitted to run
+sudo. Plink >= 0.78 is required for -pwfile. The host key must be trusted in
+PuTTY, or pinned explicitly in the computer's optional sshHostKey JSON field.
+Batch mode rejects unknown/mismatched keys without prompts or accepting them.
+There is no bypass of SSH host-key verification.
+
+All process work is isolated on a background thread with a 15-second deadline,
+a hidden console-free child, restricted inherited handles and a kill-on-close
+job. SSH passwords are provided through an ephemeral, local-only named pipe
+restricted to the Windows account; the connecting process ID is checked.
+The sudo password is provided on stdin. No password is put in process arguments
+or temporary files. Stderr is discarded; there are no terminal/error windows.
+
+Normal macOS commands are /sbin/shutdown -h now and /sbin/shutdown -r now.
+Force uses /sbin/halt -q and /sbin/reboot -q, preserving filesystem sync but
+bypassing graceful process termination. Fixed commands cannot contain computer
+names, user-provided scripts or credentials. A root shell dispatches the action
+with a one-second delay so the SSH acknowledgement can arrive before power is
+lost. The final message means the command was accepted for dispatch, not that
+the hardware has completed the shutdown/reboot. Missing SSH/sudo access,
+authentication failures and timeouts all produce the same concise failure
+message. The manager stays usable and remains open afterward.
+
+Primary references:
+https://raw.githubusercontent.com/apple-oss-distributions/system_cmds/main/reboot/reboot.8
+https://www.puttyssh.org/0.84/htmldoc/Chapter3.html
+
+Verification includes a non-networking plink stub and tests/integration/power_ssh.py,
+which runs the real installed plink against a loopback-only synthetic SSH server.
+That server validates authentication, stdin and command syntax, but NEVER runs
+shutdown/reboot commands. It needs Paramiko in .tools/ssh-test-python and an
+available loopback port 22. No live computer is powered off or restarted by tests.

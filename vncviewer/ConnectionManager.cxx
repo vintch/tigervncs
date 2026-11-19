@@ -226,6 +226,8 @@ void ServerDialog::performManagerAction(const std::string& action)
 {
   auto d = this;
   try {
+    powerTools::Action powerAction;
+    if (powerTools::actionForLabel(action, powerAction)) { runPowerTool(powerAction); return; }
     if (action == "Computers") {
       d->store.setExpanded(!d->expanded);
       d->expandManager(!d->expanded);
@@ -292,12 +294,23 @@ void ServerDialog::showContextMenu(Fl_Tree_Item* item)
     {"Delete", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
     {"Move up", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {"Move down", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
-    {"Connect to", 0, nullptr, nullptr, FL_SUBMENU, 0, 0, 0, 0},
+    {"Connect to", 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER, 0, 0, 0, 0},
     {"User session", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {"Current screen", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"Tools", 0, nullptr, nullptr, FL_SUBMENU, 0, 0, 0, 0},
+    {"Power Off", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"Reboot", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
+    {"Force Power Off", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"Force Reboot", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}
   };
+  Json::Value toolsComputer;
+  for (const auto& computer : managerData["connections"])
+    if (computer["id"] == selectedComputer) toolsComputer = computer;
+  if (!powerTools::menuEnabled(toolsComputer, powerTools::available(), bool(powerJob)))
+    for (int index = 10; index <= 14; ++index) menu[index].deactivate();
   if (!entry) menu[2].label(nullptr);
   else {
     if (entry->folder) { menu[5].flags &= ~FL_MENU_DIVIDER; menu[6].label(nullptr); }
@@ -312,6 +325,10 @@ void ServerDialog::showContextMenu(Fl_Tree_Item* item)
 void ServerDialog::presenceTick(void* data)
 {
   auto d = static_cast<ServerDialog*>(data);
+  if (d->powerJob && d->powerJob->done.load(std::memory_order_acquire)) {
+    bool success = d->powerJob->success; d->powerJob.reset();
+    fl_message("%s", success ? "The command was sent successfully." : "The command could not be sent.");
+  }
   if (d->editor->visible() && d->vpnCatalogLoading && !vpnProfiles::snapshot().loading) {
     int selected = d->vpnProfile->value();
     d->updateVpnProfiles(selected >= 0 && size_t(selected) < d->vpnProfileIds.size() ? d->vpnProfileIds[selected] : "");
@@ -374,4 +391,24 @@ void ServerDialog::updateVpnProfiles(const std::string& selected) {
   vpnProfile->redraw();
   vpnProfile->copy_tooltip(error.empty() ? "VPN profile" : error.c_str());
   vpnAction(associateVpn, this);
+}
+
+void ServerDialog::runPowerTool(powerTools::Action action) {
+  if (powerJob || selectedComputer.empty() || !powerTools::available()) return;
+  try {
+    // Snapshot before confirmation so later selections/edits cannot redirect it.
+    auto document = store.read();
+    std::string computerId = selectedComputer, name;
+    for (const auto& computer : document["connections"])
+      if (computer["id"] == computerId) {
+        if (!powerTools::menuEnabled(computer, powerTools::available())) return;
+        name = computer["name"].asString();
+      }
+    if (name.empty()) return;
+    bool force = action == powerTools::Action::ForcePowerOff || action == powerTools::Action::ForceReboot;
+    std::string question = std::string(powerTools::label(action)) + " \"" + name + "\"?";
+    if (force) question += "\n\nUnsaved data may be lost.";
+    if (fl_choice("%s", "Cancel", "Confirm", nullptr, question.c_str()) != 1) return;
+    powerJob = powerTools::start(std::move(document), computerId, action);
+  } catch (...) { fl_message("The command could not be sent."); }
 }

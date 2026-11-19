@@ -62,6 +62,7 @@ protected:
   void createShortcutsPage(int tx, int ty, int tw, int th);
   void createDisplayPage(int tx, int ty, int tw, int th);
   void createMiscPage(int tx, int ty, int tw, int th);
+  void createToolsPage(int tx, int ty, int tw, int th);
   void createVpnPage(int tx, int ty, int tw, int th);
   void createNetworkPage(int tx, int ty, int tw, int th);
 
@@ -177,7 +178,7 @@ protected:
   /* Misc. */
   Fl_Check_Button *sharedCheckbox;
   Fl_Check_Button *reconnectCheckbox;
-  Fl_Input *openVpnPathInput, *wireGuardPathInput;
+  Fl_Input *openVpnPathInput, *wireGuardPathInput, *plinkPathInput;
   Fl_Check_Button* pingEnabledCheckbox;
   Fl_Spinner *connectTimeoutSpinner, *sessionTimeoutSpinner, *pingTimeoutSpinner,
              *pingPeriodSpinner, *pingMinimumSpinner;

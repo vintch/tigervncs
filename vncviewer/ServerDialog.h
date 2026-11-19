@@ -26,6 +26,7 @@
 #include "ConnectionStore.h"
 #include "ConnectionTree.h"
 #include "PresenceMonitor.h"
+#include "PowerTools.h"
 
 #include "fltk/Fl_Suggestion_Input.h"
 
@@ -62,6 +63,8 @@ private:
   void closeEditor();
   void updateVpnProfiles(const std::string& selected = "");
   static void vpnAction(Fl_Widget*, void*);
+  std::shared_ptr<powerTools::Job> powerJob;
+  void runPowerTool(powerTools::Action action);
   void showContextMenu(Fl_Tree_Item* item);
   void performManagerAction(const std::string& action);
   static void presenceTick(void*);

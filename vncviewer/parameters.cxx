@@ -34,6 +34,7 @@
 #include "PortableConfig.h"
 #include "NetworkSettings.h"
 #include "VpnProfiles.h"
+#include "PowerTools.h"
 #include "PortableSettings.h"
 
 #include <core/Configuration.h>
@@ -280,6 +281,7 @@ static core::Parameter* parameterArray[] = {
   &networkSettings::pingTimeout, &networkSettings::pingPeriod,
   &networkSettings::pingMinimum, &networkSettings::pingEnabled,
   &vpnProfiles::openVpnExecutable, &vpnProfiles::wireGuardDirectory,
+  &powerTools::plinkExecutable,
   /* Security */
 #ifdef HAVE_GNUTLS
   &rfb::CSecurityTLS::X509CA,

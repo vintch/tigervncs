@@ -11,6 +11,7 @@ add_executable(vncviewer
   PresencePing.cxx
   NetworkSettings.cxx
   VpnProfiles.cxx
+  PowerTools.cxx
   CredentialVault.cxx
   fltk/Fl_Monitor_Arrangement.cxx
   fltk/Fl_Suggestion_Item_.cxx

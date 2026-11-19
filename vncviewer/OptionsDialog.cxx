@@ -43,6 +43,7 @@
 #include "OptionsDialog.h"
 #include "NetworkSettings.h"
 #include "VpnProfiles.h"
+#include "PowerTools.h"
 #include "PresenceMonitor.h"
 #include <FL/Fl_Spinner.H>
 #include "ShortcutHandler.h"
@@ -110,6 +111,7 @@ OptionsDialog::OptionsDialog()
     createMiscPage(tx, ty, tw, th);
     createNetworkPage(tx, ty, tw, th);
     createVpnPage(tx, ty, tw, th);
+    createToolsPage(tx, ty, tw, th);
   }
 
   navigation->end();
@@ -390,6 +392,7 @@ void OptionsDialog::loadOptions(void)
   pingPeriodSpinner->value(networkSettings::pingPeriod);
   pingMinimumSpinner->value(networkSettings::pingMinimum);
   pingEnabledCheckbox->value(networkSettings::pingEnabled);
+  plinkPathInput->value(std::string(powerTools::plinkExecutable).c_str());
   openVpnPathInput->value(std::string(vpnProfiles::openVpnExecutable).c_str());
   wireGuardPathInput->value(std::string(vpnProfiles::wireGuardDirectory).c_str());
 #ifdef HAVE_AUDIO
@@ -559,6 +562,7 @@ void OptionsDialog::storeOptions(void)
   networkSettings::pingPeriod.setParam(int(pingPeriodSpinner->value()));
   networkSettings::pingMinimum.setParam(int(pingMinimumSpinner->value()));
   networkSettings::pingEnabled.setParam(bool(pingEnabledCheckbox->value()));
+  powerTools::plinkExecutable.setParam(plinkPathInput->value());
   bool vpnChanged = std::string(vpnProfiles::openVpnExecutable) != openVpnPathInput->value() ||
                     std::string(vpnProfiles::wireGuardDirectory) != wireGuardPathInput->value();
   vpnProfiles::openVpnExecutable.setParam(openVpnPathInput->value());
@@ -1632,6 +1636,20 @@ void OptionsDialog::createVpnPage(int tx, int ty, int tw, int th)
   wireGuardPathInput->align(FL_ALIGN_TOP_LEFT);
   auto note = new Fl_Box(tx + 15, ty + 160, tw - 30, 80,
     "Profiles are read at startup and when these paths change.\nVPN associations can be set in the computer editor.\nVPN connections are not activated automatically yet.");
+  note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
+  group->end();
+}
+
+void OptionsDialog::createToolsPage(int tx, int ty, int tw, int th)
+{
+  auto group = new Fl_Group(tx, ty, tw, th, "Tools");
+  plinkPathInput = new Fl_Input(tx + 15, ty + 45, tw - 30, 27, "PuTTY plink executable:");
+  plinkPathInput->align(FL_ALIGN_TOP_LEFT);
+  auto note = new Fl_Box(tx + 15, ty + 100, tw - 30, 135,
+    "Power tools use the computer's saved username and password.\n"
+    "The Mac must allow SSH on port 22 and administrator commands.\n"
+    "Its SSH host key must already be trusted in PuTTY.\n"
+    "Force actions may discard unsaved data.");
   note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
   group->end();
 }
