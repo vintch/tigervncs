@@ -83,6 +83,11 @@ writable directory. **Computers** opens the saved connection list. Right-click
 the list to add computers or folders. **Options** contains compression,
 display, network, VPN and power-tool settings.
 
+For a Windows Remote Desktop connection, choose **Connection: RDP** in the
+computer editor. To specify its startup dimensions, enable **Set initial RDP
+window size** under **Options / RDP**. Leaving it unchecked uses mstsc's own
+display defaults; your saved width and height remain available for later use.
+
 Optional tools are installed separately: PuTTY plink for SSH actions,
 Wireguard and/or OpenVPN Connect for VPN control, and a compatible Shelly
 Plug for outlet control. The Mac must be configured to start when power

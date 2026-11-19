@@ -16,7 +16,8 @@ The Windows viewer additions requested for mod 1.0 are implemented:
   confirmations, modal progress, cancellation and device-side restoration timer.
 - Standalone `TigerVNCs.exe` Windows build and regression/integration checks.
 - Per-computer VNC/RDP selection and external mstsc lifecycle handling.
-- Configurable RDP startup dimensions, durable prompt-settings recovery and
+- Optional RDP startup dimensions (explicit sizing is off by default),
+  durable prompt-settings recovery and
   a manual restore button; normal-size VNC cursors with optional local hiding.
 
 VPN control is intentionally independent of VNC connections. Selecting a

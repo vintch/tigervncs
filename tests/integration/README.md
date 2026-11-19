@@ -92,6 +92,10 @@ session options. Tests must not send input or execute commands on the remote
 desktop; disconnect by closing the local client or terminating its test PID.
 
 Options / RDP exposes startup dimensions and Restore default RDP settings.
+Verify Set initial RDP window size is off by default, disables both dimension
+inputs when off, and retains their values while toggled. The native launcher
+must omit /w and /h when off and include both when on. The unit suite checks
+both argument paths; the portable-settings check covers persistence.
 The restore action changes native prompt preferences immediately; test its
 backend using isolated fixtures. Options / Input exposes Disable local mouse
 cursor. The server-provided local cursor image and hotspot stay unscaled at
