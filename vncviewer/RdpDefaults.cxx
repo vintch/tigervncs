@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "RdpDefaults.h"
 #include "PortableConfig.h"
+#include <core/string.h>
 #include <vector>
 #include <stdexcept>
 #include <algorithm>
@@ -41,6 +42,71 @@ std::vector<Flag> flags(const std::vector<unsigned char>& bytes) {
 void append(std::vector<unsigned char>& bytes,const std::string& text,size_t unit) {
   for(unsigned char c:text) { bytes.push_back(c); if(unit==2) bytes.push_back(0); }
 }
+const std::string displayNames[]={"desktopwidth","desktopheight","desktop size id","winposstr","smart sizing","dynamic resolution"};
+struct DisplayLine { size_t begin,end; unsigned kind; std::string text; };
+std::vector<DisplayLine> displayLines(const std::vector<unsigned char>& bytes) {
+  std::vector<DisplayLine> result; size_t unit=width(bytes),start=unit==2?2:0;
+  if(unit==1 && bytes.size()>=3 && bytes[0]==239 && bytes[1]==187 && bytes[2]==191) start=3;
+  for(size_t begin=start;begin<bytes.size();) {
+    size_t end=begin; while(end<bytes.size() && bytes[end]!='\n') end+=unit;
+    size_t next=std::min(bytes.size(),end+unit);
+    if(end>begin && bytes[end-unit]=='\r') end-=unit;
+    std::string key;
+    for(size_t at=begin;at<end && bytes[at]!=':';at+=unit) {
+      unsigned char c=bytes[at]; if(c>='A' && c<='Z') c+=32;
+      key+=char(c);
+    }
+    for(unsigned kind=0;kind<6;++kind) if(key==displayNames[kind]) {
+      std::string text;
+      if(unit==2) { std::wstring line; for(size_t at=begin;at+1<end;at+=2) line+=wchar_t(bytes[at]|(unsigned(bytes[at+1])<<8)); text=core::utf16ToUTF8(line.c_str()); }
+      else text.assign(reinterpret_cast<const char*>(bytes.data()+begin),end-begin);
+      result.push_back({begin,next,kind,text}); break;
+    }
+    begin=next;
+  }
+  return result;
+}
+Json::Value captureDisplay(const std::vector<unsigned char>& bytes) {
+  Json::Value result(Json::objectValue);
+  for(const auto& name:displayNames) result[name]=Json::Value(Json::arrayValue);
+  auto lines=displayLines(bytes);
+  if(lines.size()>256) throw std::runtime_error("Too many native RDP display preferences");
+  for(const auto& line:lines) result[displayNames[line.kind]].append(line.text);
+  return result;
+}
+void validateDisplay(const Json::Value& saved) {
+  if(!saved.isObject() || saved.size()!=6) throw std::runtime_error("Invalid RDP display recovery settings");
+  for(const auto& name:displayNames) {
+    if(!saved[name].isArray() || saved[name].size()>256) throw std::runtime_error("Invalid RDP display recovery settings");
+    for(const auto& line:saved[name]) {
+      if(!line.isString()) throw std::runtime_error("Invalid RDP display recovery value");
+      auto text=line.asString(), key=text.substr(0,text.find(':'));
+      for(auto& c:key) if(c>='A' && c<='Z') c+=32;
+      if(key!=name || text.size()>2048 || text.find_first_of("\r\n")!=std::string::npos || text.find('\0')!=std::string::npos || !core::isValidUTF8(text.c_str()))
+        throw std::runtime_error("Invalid RDP display recovery value");
+    }
+  }
+}
+std::vector<unsigned char> withoutDisplay(std::vector<unsigned char> bytes) {
+  auto lines=displayLines(bytes);
+  for(auto line=lines.rbegin();line!=lines.rend();++line) bytes.erase(bytes.begin()+line->begin,bytes.begin()+line->end);
+  return bytes;
+}
+void appendLine(std::vector<unsigned char>& bytes,const std::string& line) {
+  size_t unit=width(bytes);
+  if(bytes.size()>(unit==2?2u:0u) && bytes[bytes.size()-unit]!='\n') append(bytes,"\r\n",unit);
+  append(bytes,line+"\r\n",unit);
+}
+std::vector<unsigned char> automaticDisplay(std::vector<unsigned char> bytes) {
+  bytes=withoutDisplay(std::move(bytes));
+  appendLine(bytes,"smart sizing:i:1"); appendLine(bytes,"dynamic resolution:i:1");
+  return bytes;
+}
+std::vector<unsigned char> restoreDisplay(std::vector<unsigned char> bytes,const Json::Value& saved) {
+  validateDisplay(saved); bytes=withoutDisplay(std::move(bytes));
+  for(const auto& name:displayNames) for(const auto& line:saved[name]) appendLine(bytes,line.asString());
+  return bytes;
+}
 #ifdef WIN32
 struct File { HANDLE value=INVALID_HANDLE_VALUE; ~File(){if(value!=INVALID_HANDLE_VALUE) CloseHandle(value);} };
 std::vector<unsigned char> read(HANDLE file) {
@@ -72,9 +138,10 @@ bool restore(const std::wstring& path,const std::string& config,bool onlyPending
   if(!saved && onlyPending) return false;
   std::vector<Flag> prior;
   if(saved) {
-    if(!recovery.isObject() || recovery["version"]!=1 || !recovery["id"].isString() ||
+    if(!recovery.isObject() || (recovery["version"]!=1 && recovery["version"]!=2) || !recovery["id"].isString() ||
        !recovery["hadDefaultFile"].isBool() || !recovery["flags"].isArray() || recovery["flags"].size()>256)
       throw std::runtime_error("Invalid saved RDP recovery settings");
+    if(recovery["version"]==2) validateDisplay(recovery["display"]);
     DWORD owner=recovery["ownerPid"].asUInt();
     if(owner && owner!=GetCurrentProcessId()) {
       HANDLE process=OpenProcess(SYNCHRONIZE|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,owner);
@@ -105,6 +172,7 @@ bool restore(const std::wstring& path,const std::string& config,bool onlyPending
       if(old!=prior.rend()) result[i->position]=old->value;
       else result.erase(result.begin()+i->begin,result.begin()+i->end);
     }
+    if(recovery["version"]==2) result=restoreDisplay(std::move(result),recovery["display"]);
   } else {
     bool present[2]={false,false};
     for(const auto& flag:found) { present[flag.kind]=true; result[flag.position]=flag.kind==0?'1':'2'; }
@@ -129,6 +197,7 @@ bool restore(const std::wstring& path,const std::string& config,bool onlyPending
 struct DefaultSettingsLease::State {
   std::wstring path; std::vector<unsigned char> original,installed; bool existed=true,changed=false,committed=false;
   std::string recoveryConfig,recoveryId; bool active=false;
+  bool autoDisplay=false;
   ~State();
 };
 bool settingsInUse() { return activeSettings.load()!=0; }
@@ -139,9 +208,10 @@ bool restoreDefaultSettings() {
   throw std::runtime_error("RDP settings require Windows");
 #endif
 }
-void DefaultSettingsLease::initialize(const std::wstring& path,const std::string& recoveryConfig) {
+void DefaultSettingsLease::initialize(const std::wstring& path,const std::string& recoveryConfig,bool autoDisplay) {
 #ifdef WIN32
   state->path=path;
+  state->autoDisplay=autoDisplay;
   File file; file.value=CreateFileW(path.c_str(),GENERIC_READ|GENERIC_WRITE,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
   if(file.value==INVALID_HANDLE_VALUE) {
     if(GetLastError()!=ERROR_FILE_NOT_FOUND) throw std::runtime_error("Cannot prepare native RDP preferences");
@@ -158,13 +228,15 @@ void DefaultSettingsLease::initialize(const std::wstring& path,const std::string
     if(state->installed.size()>(unit==2?2u:0u) && state->installed[state->installed.size()-unit]!='\n') append(state->installed,"\r\n",unit);
     append(state->installed,tokens[kind]+"0\r\n",unit);
   }
+  if(autoDisplay) state->installed=automaticDisplay(std::move(state->installed));
   state->changed=!state->existed || state->installed!=state->original;
   if(state->changed && !recoveryConfig.empty()) {
     PortableConfig config(recoveryConfig); auto document=config.read();
     if(!document["rdpRecovery"].isNull()) throw std::runtime_error("Restore the pending RDP settings before connecting.");
     auto originalFlags=flags(state->original);
     if(originalFlags.size()>256) throw std::runtime_error("Too many native RDP prompt settings");
-    Json::Value saved; saved["version"]=1; saved["hadDefaultFile"]=state->existed;
+    Json::Value saved; saved["version"]=autoDisplay?2:1; saved["hadDefaultFile"]=state->existed;
+    if(autoDisplay) { saved["display"]=captureDisplay(state->original); validateDisplay(saved["display"]); }
     saved["ownerPid"]=Json::UInt(GetCurrentProcessId());
     FILETIME created{},exited{},kernel{},user{};
     if(!GetProcessTimes(GetCurrentProcess(),&created,&exited,&kernel,&user)) throw std::runtime_error("Cannot identify the RDP recovery owner");
@@ -182,16 +254,16 @@ void DefaultSettingsLease::initialize(const std::wstring& path,const std::string
   (void)path;
 #endif
 }
-DefaultSettingsLease::DefaultSettingsLease():state(new State) {
+DefaultSettingsLease::DefaultSettingsLease(bool autoDisplay):state(new State) {
 #ifdef WIN32
   auto path=nativePath(); auto config=PortableConfig::executablePath();
   restore(path,config,true);
-  initialize(path,config);
+  initialize(path,config,autoDisplay);
 #endif
 }
 #ifdef TIGERVNCS_RDP_TEST
 DefaultSettingsLease::DefaultSettingsLease(const std::wstring& path):state(new State) { initialize(path); }
-DefaultSettingsLease::DefaultSettingsLease(const std::wstring& path,const std::string& config):state(new State) { restore(path,config,true); initialize(path,config); }
+DefaultSettingsLease::DefaultSettingsLease(const std::wstring& path,const std::string& config,bool autoDisplay):state(new State) { restore(path,config,true); initialize(path,config,autoDisplay); }
 void DefaultSettingsLease::abandonForTest() { state->changed=false; }
 bool restoreDefaultSettingsForTest(const std::wstring& path,const std::string& config) { return restore(path,config,false); }
 #endif
@@ -213,6 +285,7 @@ DefaultSettingsLease::State::~State() {
         if(old!=prior.rend()) restored[i->position]=old->value;
         else restored.erase(restored.begin()+i->begin,restored.begin()+i->end);
       }
+      if(autoDisplay) restored=restoreDisplay(std::move(restored),captureDisplay(original));
     }
     if(!existed && restored.empty()) {
       CloseHandle(file.value); file.value=INVALID_HANDLE_VALUE; DeleteFileW(path.c_str());

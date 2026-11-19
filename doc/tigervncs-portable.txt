@@ -346,7 +346,8 @@ are not made persistent across Windows logons.
 mstsc /v also reads its own Documents/Default.rdp preferences. For the lifetime
 of the launched client, TigerVNCs temporarily sets its password-prompt and
 server-authentication flags to zero. Missing flags or a missing Default.rdp
-are created temporarily. Other preferences remain intact. On normal client
+are created temporarily. Automatic display also temporarily adjusts display
+preferences as described below. On normal client
 completion or a failed launch, prior values are restored and temporary additions
 are removed, preserving unrelated changes.
 This avoids both the forced password prompt and server certificate warnings.
@@ -363,16 +364,21 @@ Reference: https://learn.microsoft.com/en-us/windows-server/remote/remote-deskto
 RDP preferences and manual recovery
 -----------------------------------
 Options / RDP includes Set initial RDP window size (RdpForceWindowSize,
-default off). When unchecked, no /w or /h arguments are passed and mstsc uses
-its native defaults. Enabling it activates RdpWindowWidth and RdpWindowHeight
+default off). When unchecked, no /w or /h arguments are passed. Cached
+desktopwidth, desktopheight, desktop size id and winposstr values are temporarily
+removed so an old small desktop cannot cap the window size. Smart sizing and
+dynamic resolution are temporarily enabled; the native client uses the local
+display dimensions and scales content when resized. Original display values
+are restored on exit. Enabling the checkbox activates RdpWindowWidth and RdpWindowHeight
 (default 1024 x 600; 200-8192 pixels each). These dimensions are passed as /w
 and /h; the outer window also includes the native client's borders. Stored
 dimensions are retained while the checkbox is off.
 Accept Options to save them in the viewer section of tigervncs.json.
 
-Before changing native prompt flags, the launcher saves their original values
-in rdpRecovery inside the same JSON. No password or Default.rdp contents are
-stored in this recovery snapshot. Successful cleanup removes the snapshot.
+Before changing native preferences, the launcher saves original prompt flags
+and, in automatic display mode, the six affected display fields in rdpRecovery
+inside the same JSON. No password or complete Default.rdp file is stored in
+this recovery snapshot. Successful cleanup removes the snapshot.
 A later launch first recovers pending settings from an interrupted session.
 Process identity checks prevent recovery from overriding another active
 TigerVNCs owner of the same snapshot.
@@ -381,8 +387,9 @@ Restore default RDP settings uses the saved snapshot when one exists. Without
 a snapshot, it enables native password prompts and certificate warnings
 (prompt for credentials=1, authentication level=2). Other native preferences
 are preserved. Recovery is refused while this process has an active RDP
-settings lease. This button restores native prompt settings, not saved
-connections, window dimensions or prior Credential Manager records lost
+settings lease. A pending snapshot also restores native display values changed
+for automatic display. The button does not reset saved connections, configured
+startup dimensions or prior Credential Manager records lost
 through a forced process termination.
 
 The temporary credential target remains TERMSRV/<host>: mstsc looks up its

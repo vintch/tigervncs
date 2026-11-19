@@ -8,18 +8,18 @@ bool settingsInUse();
 // Returns true when a saved recovery snapshot was restored; otherwise reset
 // only the two native prompt flags to their normal interactive defaults.
 bool restoreDefaultSettings();
-// mstsc /v reads its own Default.rdp. Temporarily clear only its password
-// prompt and server-authentication flags, preserving every other setting and
-// restoring the flags on exit.
+// mstsc /v reads its own Default.rdp. Temporarily clear its prompt flags;
+// automatic display also ignores cached dimensions/placement and enables
+// resizing. Restore prior values on exit, preserving unrelated settings.
 class DefaultSettingsLease {
   struct State; std::unique_ptr<State> state;
-  void initialize(const std::wstring& path, const std::string& recoveryConfig = "");
+  void initialize(const std::wstring& path, const std::string& recoveryConfig = "", bool automaticDisplay = false);
 public:
-  DefaultSettingsLease();
+  explicit DefaultSettingsLease(bool automaticDisplay = false);
   ~DefaultSettingsLease();
 #ifdef TIGERVNCS_RDP_TEST
   explicit DefaultSettingsLease(const std::wstring& path);
-  DefaultSettingsLease(const std::wstring& path,const std::string& recoveryConfig);
+  DefaultSettingsLease(const std::wstring& path,const std::string& recoveryConfig,bool automaticDisplay = false);
   void abandonForTest();
 #endif
 };

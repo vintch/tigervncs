@@ -99,7 +99,7 @@ std::shared_ptr<Job> startClient(Settings settings, const std::wstring& testExec
 #ifdef TIGERVNCS_RDP_TEST
       if(testExecutable.empty())
 #endif
-      defaults.reset(new DefaultSettingsLease);
+      defaults.reset(new DefaultSettingsLease(!forceWindowSize));
       CredentialVault::erase(settings.password);
       wchar_t directory[MAX_PATH]; UINT length=GetSystemDirectoryW(directory,MAX_PATH);
       if(!length || length>=MAX_PATH) throw std::runtime_error("Unable to locate Windows Remote Desktop");

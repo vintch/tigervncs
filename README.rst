@@ -85,8 +85,10 @@ display, network, VPN and power-tool settings.
 
 For a Windows Remote Desktop connection, choose **Connection: RDP** in the
 computer editor. To specify its startup dimensions, enable **Set initial RDP
-window size** under **Options / RDP**. Leaving it unchecked uses mstsc's own
-display defaults; your saved width and height remain available for later use.
+window size** under **Options / RDP**. Leaving it unchecked uses the local
+display size, ignores cached small desktop dimensions and enables resizing
+with content scaling. Native display preferences are restored after exit;
+your saved width and height remain available for later use.
 
 Optional tools are installed separately: PuTTY plink for SSH actions,
 Wireguard and/or OpenVPN Connect for VPN control, and a compatible Shelly
