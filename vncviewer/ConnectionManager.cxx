@@ -4,6 +4,7 @@
 #include "NetworkSettings.h"
 #include "VpnProfiles.h"
 #include "VpnUi.h"
+#include "ShellyDialog.h"
 #include <FL/Fl.H>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Tree.H>
@@ -51,7 +52,7 @@ void ServerDialog::createManager(int top)
   tree->selectmode(FL_TREE_SELECT_SINGLE);
   tree->connectorstyle(FL_TREE_CONNECTOR_NONE);
   tree->callback(treeAction, this);
-  editor = new Fl_Group(15, top + managerPane->h() - 339, w() - 30, 324);
+  editor = new Fl_Group(15, top + managerPane->h() - 339, w() - 30, 444);
   int y = editor->y();
   entryName = new Fl_Input(112, y, 318, 25, "Name:"); y += 30;
   entryFolder = new Fl_Choice(112, y, 318, 25, "Folder:"); y += 30;
@@ -71,11 +72,20 @@ void ServerDialog::createManager(int top)
   vpnProvider->callback(vpnAction, this);
   vpnProfile = new Fl_Choice(230, y, 200, 25); y += 32;
   vpnProfile->tooltip("VPN profile");
-  auto b = new Fl_Button(198, y, 110, 27, "Save entry"); b->callback(managerAction, this);
-  b = new Fl_Button(318, y, 112, 27, "Cancel edit"); b->callback(managerAction, this);
+  entryPowerOn = new Fl_Choice(112, y, 318, 25, "Power On:"); y += 30;
+  entryPowerOn->add("None"); entryPowerOn->add("Shelly Plug"); entryPowerOn->value(0);
+  entryPowerOn->callback(powerOnModeChanged, this);
+  entryShellyAddress = new Fl_Input(112, y, 318, 25, "Plug IP:"); y += 30;
+  entryShellyUser = new Fl_Input(112, y, 318, 25, "Plug login:"); y += 30;
+  entryShellyPassword = new Fl_Secret_Input(112, y, 318, 25, "Plug password:"); y += 30;
+  entryShellyPassword->tooltip("Leave blank to keep the saved Shelly Plug password.");
+  saveEntryButton = new Fl_Button(198, y, 110, 27, "Save entry"); saveEntryButton->callback(managerAction, this);
+  cancelEntryButton = new Fl_Button(318, y, 112, 27, "Cancel edit"); cancelEntryButton->callback(managerAction, this);
   editor->end();
+  editor->resizable(nullptr);
   editor->hide();
   managerPane->end();
+  managerPane->resizable(nullptr);
   managerPane->hide();
   tree->tooltip("Right-click to create, edit or move an entry.");
   presence.reset(new PresenceMonitor(createPingTransport()));
@@ -152,8 +162,10 @@ void ServerDialog::treeAction(Fl_Widget*, void* data)
 
 void ServerDialog::closeEditor()
 {
-  entryPassword->value("");
+  entryPassword->value(""); entryShellyPassword->value("");
   editor->hide();
+  managerPane->size(managerPane->w(), collapsedHeight * 3);
+  if (expanded) size(w(), collapsedHeight * 4);
   tree->size(tree->w(), managerPane->h() - 23);
   redraw();
 }
@@ -176,6 +188,11 @@ void ServerDialog::editEntry(bool folder, bool existing)
   entryAddress->value(existing && !folder ? record["address"].asCString() : serverName->value());
   entryUser->value(existing && !folder ? record["username"].asCString() : "");
   entryPassword->value("");
+  const auto& power = record["powerOn"];
+  entryPowerOn->value(power.isObject() && power["mode"] == "shelly-plug" ? 1 : 0);
+  entryShellyAddress->value(power.isObject() && power["address"].isString() ? power["address"].asCString() : "");
+  entryShellyUser->value(power.isObject() && power["username"].isString() ? power["username"].asCString() : "");
+  entryShellyPassword->value("");
   rememberPassword->value(!existing || !record["password"].isNull());
   entrySessionMode->value(existing && record["sessionMode"] == "user-session" ? 1 : 0);
   const auto& vpn = record["vpn"];
@@ -212,10 +229,10 @@ void ServerDialog::editEntry(bool folder, bool existing)
   entryFolder->copy(menu.data());
   entryFolder->value(selected);
   for (Fl_Widget* widget : std::vector<Fl_Widget*>{entryAddress, entryUser, entryPassword, entrySessionMode,
-                                                 rememberPassword, associateVpn, vpnProvider, vpnProfile})
+                                                 rememberPassword, associateVpn, vpnProvider, vpnProfile, entryPowerOn})
     if (folder) widget->hide(); else widget->show();
   tree->size(tree->w(), editor->y() - tree->y() - 10);
-  editor->show(); entryName->take_focus(); redraw();
+  editor->show(); layoutPowerOnEditor(); entryName->take_focus(); redraw();
 }
 
 void ServerDialog::managerAction(Fl_Widget* widget, void* data)
@@ -228,6 +245,7 @@ void ServerDialog::performManagerAction(const std::string& action)
 {
   auto d = this;
   try {
+    if (action == "Power On") { runPowerOn(); return; }
     powerTools::Action powerAction;
     if (powerTools::actionForLabel(action, powerAction)) { runPowerTool(powerAction); return; }
     if (action == "Computers") {
@@ -261,7 +279,13 @@ void ServerDialog::performManagerAction(const std::string& action)
         if (!d->rememberPassword->value()) change = ConnectionStore::ForgetPassword;
         else if (d->entryPassword->size() || d->editingId.empty() ||
                  d->store.connection(d->editingId)["password"].isNull()) change = ConnectionStore::SetPassword;
-        std::string password = d->entryPassword->value();
+        Json::Value powerOn; powerOn["mode"] = d->entryPowerOn->value() == 1 ? "shelly-plug" : "none";
+        powerOn["address"] = d->entryShellyAddress->value(); powerOn["username"] = d->entryShellyUser->value();
+        if (d->entryPowerOn->value() == 1) shellyPower::parseAddress(d->entryShellyAddress->value());
+        std::string password = d->entryPassword->value(), plugPassword = d->entryShellyPassword->value();
+        auto plugChange = ConnectionStore::KeepPassword;
+        if (!plugPassword.empty() || (d->entryPowerOn->value() == 1 &&
+            (d->editingId.empty() || d->store.connection(d->editingId)["powerOn"]["password"].isNull()))) plugChange = ConnectionStore::SetPassword;
         Json::Value vpn(Json::objectValue);
         vpn["enabled"] = bool(d->associateVpn->value());
         vpn["provider"] = d->vpnProvider->value() == 1 ? "openvpn" : "wireguard";
@@ -270,9 +294,9 @@ void ServerDialog::performManagerAction(const std::string& action)
         try {
           id = d->store.saveConnection(d->editingId, d->entryName->value(), d->entryAddress->value(),
             d->entryUser->value(), d->folderIds[index], change, password,
-            d->entrySessionMode->value() == 1 ? "user-session" : "current-screen", vpn);
-        } catch (...) { CredentialVault::erase(password); throw; }
-        CredentialVault::erase(password);
+            d->entrySessionMode->value() == 1 ? "user-session" : "current-screen", vpn, powerOn, plugChange, plugPassword);
+        } catch (...) { CredentialVault::erase(password); CredentialVault::erase(plugPassword); throw; }
+        CredentialVault::erase(password); CredentialVault::erase(plugPassword);
       }
       d->closeEditor(); d->refreshManager(id);
     }
@@ -301,6 +325,7 @@ void ServerDialog::showContextMenu(Fl_Tree_Item* item)
     {"Current screen", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {"Tools", 0, nullptr, nullptr, FL_SUBMENU, 0, 0, 0, 0},
+    {"Power On", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
     {"Power Off", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {"Reboot", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
     {"Force Power Off", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
@@ -311,8 +336,11 @@ void ServerDialog::showContextMenu(Fl_Tree_Item* item)
   Json::Value toolsComputer;
   for (const auto& computer : managerData["connections"])
     if (computer["id"] == selectedComputer) toolsComputer = computer;
-  if (!powerTools::menuEnabled(toolsComputer, powerTools::available(), bool(powerJob)))
-    for (int index = 10; index <= 14; ++index) menu[index].deactivate();
+  bool sshAvailable = powerTools::menuEnabled(toolsComputer, powerTools::available(), bool(powerJob));
+  bool powerOnAvailable = shellyPower::configured(toolsComputer);
+  if (!sshAvailable) for (int index = 12; index <= 15; ++index) menu[index].deactivate();
+  if (!powerOnAvailable) menu[11].deactivate();
+  if (!sshAvailable && !powerOnAvailable) menu[10].deactivate();
   if (!entry) menu[2].label(nullptr);
   else {
     if (entry->folder) { menu[5].flags &= ~FL_MENU_DIVIDER; menu[6].label(nullptr); }
@@ -466,4 +494,32 @@ void ServerDialog::handleVpn(Fl_Widget*, void* data) {
   dialog->pendingVpnConnect = connect; dialog->pendingVpnProfiles = profiles;
   dialog->vpnCommand = vpnControl::startCommand(dialog->pendingVpnSettings, target.provider, connect, profiles);
   dialog->updateVpn();
+}
+
+void ServerDialog::powerOnModeChanged(Fl_Widget*, void* data) { static_cast<ServerDialog*>(data)->layoutPowerOnEditor(); }
+void ServerDialog::layoutPowerOnEditor() {
+  bool details = !editingFolder && entryPowerOn->value() == 1;
+  for (Fl_Widget* widget : std::vector<Fl_Widget*>{entryShellyAddress, entryShellyUser, entryShellyPassword})
+    if (details) widget->show(); else widget->hide();
+  int extra = editingFolder ? 0 : 30 + (details ? 90 : 0);
+  int buttonsY = entryPowerOn->y() + extra;
+  saveEntryButton->position(198, buttonsY); cancelEntryButton->position(318, buttonsY);
+  editor->size(editor->w(), 324 + extra);
+  managerPane->size(managerPane->w(), collapsedHeight * 3 + extra);
+  if (expanded) size(w(), collapsedHeight * 4 + extra);
+  redraw();
+}
+void ServerDialog::runPowerOn() {
+  if (selectedComputer.empty()) return;
+  try {
+    auto document = store.read(); std::string id = selectedComputer; Json::Value computer;
+    for (const auto& entry : document["connections"]) if (entry["id"] == id) computer = entry;
+    if (!shellyPower::configured(computer)) return;
+    std::string message = "Power On \"" + computer["name"].asString() + "\" using Shelly Plug at " + computer["powerOn"]["address"].asString() + "?\n\nThe plug will briefly switch power off and then restore it.";
+    if (fl_choice("%s", "Cancel", "Power On", nullptr, message.c_str()) != 1) return;
+    // Read only the monitor's latest cached result. Never send an extra ping.
+    if (presence->online(id) && fl_choice("This computer is currently marked online.\n\nCycling its power may discard unsaved data. Continue?", "Cancel", "Continue", nullptr) != 1) return;
+    auto credentials = shellyPower::credentials(document, id);
+    runShellyDialog(credentials, int(shellyPower::delaySeconds), computer["name"].asString());
+  } catch (...) { fl_message("Unable to use the Shelly Plug settings or send the power command."); }
 }

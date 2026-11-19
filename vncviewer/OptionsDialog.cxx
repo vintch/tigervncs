@@ -44,6 +44,7 @@
 #include "NetworkSettings.h"
 #include "VpnProfiles.h"
 #include "PowerTools.h"
+#include "ShellyPower.h"
 #include "PresenceMonitor.h"
 #include <FL/Fl_Spinner.H>
 #include "ShortcutHandler.h"
@@ -392,6 +393,7 @@ void OptionsDialog::loadOptions(void)
   pingPeriodSpinner->value(networkSettings::pingPeriod);
   pingMinimumSpinner->value(networkSettings::pingMinimum);
   pingEnabledCheckbox->value(networkSettings::pingEnabled);
+  shellyDelaySpinner->value(shellyPower::delaySeconds);
   plinkPathInput->value(std::string(powerTools::plinkExecutable).c_str());
   openVpnLogInput->value(std::string(vpnProfiles::openVpnLog).c_str());
   openVpnPathInput->value(std::string(vpnProfiles::openVpnExecutable).c_str());
@@ -563,6 +565,7 @@ void OptionsDialog::storeOptions(void)
   networkSettings::pingPeriod.setParam(int(pingPeriodSpinner->value()));
   networkSettings::pingMinimum.setParam(int(pingMinimumSpinner->value()));
   networkSettings::pingEnabled.setParam(bool(pingEnabledCheckbox->value()));
+  shellyPower::delaySeconds.setParam(int(shellyDelaySpinner->value()));
   powerTools::plinkExecutable.setParam(plinkPathInput->value());
   bool vpnChanged = std::string(vpnProfiles::openVpnExecutable) != openVpnPathInput->value() ||
                     std::string(vpnProfiles::wireGuardDirectory) != wireGuardPathInput->value();
@@ -1657,5 +1660,7 @@ void OptionsDialog::createToolsPage(int tx, int ty, int tw, int th)
     "SSH host keys are accepted automatically and are not saved.\n"
     "Force actions may discard unsaved data.");
   note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
+  shellyDelaySpinner = new Fl_Spinner(tx + 260, ty + 260, 100, 27, "Shelly Plug delay (s):");
+  shellyDelaySpinner->type(FL_INT_INPUT); shellyDelaySpinner->range(1,3600); shellyDelaySpinner->step(1);
   group->end();
 }

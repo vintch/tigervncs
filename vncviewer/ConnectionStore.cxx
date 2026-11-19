@@ -77,6 +77,18 @@ void validate(Json::Value& document) {
         !connection["address"].isString() || !connection["username"].isString() ||
         !connection["folderId"].isString()) throw std::runtime_error("Invalid computer entry");
     vpnProfiles::validateAssociation(connection["vpn"]);
+    const auto& power = connection["powerOn"];
+    if (!power.isNull()) {
+      if (!power.isObject() || (power["mode"] != "none" && power["mode"] != "shelly-plug"))
+        throw std::runtime_error("Invalid Power On mode");
+      for (const char* field : {"address", "username"}) {
+        if (!power[field].isNull() && !power[field].isString()) throw std::runtime_error("Invalid Shelly Plug settings");
+        if (power[field].isString()) text(power[field].asString(), field, 1024, true);
+      }
+      if (power["mode"] == "shelly-plug" && (!power["address"].isString() || trim(power["address"].asString()).empty() || !power["username"].isString()))
+        throw std::runtime_error("Enter the Shelly Plug IP address and login");
+      if (!power["password"].isNull() && !power["password"].isObject()) throw std::runtime_error("Invalid saved Shelly Plug password");
+    }
     auto id = connection["id"].asString();
     text(id, "computer identifier", 64);
     text(connection["name"].asString(), "computer name", 256);
@@ -167,7 +179,8 @@ std::string ConnectionStore::saveFolder(const std::string& id, const std::string
 }
 std::string ConnectionStore::saveConnection(const std::string& id, const std::string& name,
   const std::string& address, const std::string& username, const std::string& folder,
-  PasswordChange change, const std::string& password, const std::string& sessionMode, const Json::Value& vpn) {
+  PasswordChange change, const std::string& password, const std::string& sessionMode, const Json::Value& vpn, const Json::Value& powerOn,
+  PasswordChange shellyChange, const std::string& shellyPassword) {
   auto document = read();
   int index = id.empty() ? -1 : indexOf(document["connections"], id);
   auto siblings = children(document, folder);
@@ -177,6 +190,12 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
   entry["id"] = result; entry["name"] = trim(name); entry["address"] = trim(address);
   entry["username"] = username; entry["folderId"] = folder;
   if (!vpn.isNull()) { vpnProfiles::validateAssociation(vpn); entry["vpn"] = vpn; }
+  if (!powerOn.isNull()) {
+    if (!powerOn.isObject()) throw std::runtime_error("Invalid Power On settings");
+    if (entry["powerOn"].isNull()) entry["powerOn"] = Json::Value(Json::objectValue);
+    for (const char* field : {"mode", "address", "username"})
+      if (powerOn.isMember(field)) entry["powerOn"][field] = powerOn[field];
+  }
   if (!sessionMode.empty()) entry["sessionMode"] = sessionMode;
   else if (entry["sessionMode"].isNull()) entry["sessionMode"] = "current-screen";
   std::string host; int port;
@@ -195,9 +214,14 @@ std::string ConnectionStore::saveConnection(const std::string& id, const std::st
     document["connections"][position]["password"] = CredentialVault::encrypt(document, result, password);
   else if (change == ForgetPassword)
     document["connections"][position].removeMember("password");
+  if (shellyChange == SetPassword)
+    document["connections"][position]["powerOn"]["password"] = CredentialVault::encrypt(document, result + "::shelly", shellyPassword);
+  else if (shellyChange == ForgetPassword)
+    document["connections"][position]["powerOn"].removeMember("password");
   if (document["connections"][position]["sessionMode"] == "user-session" &&
       (username.empty() || document["connections"][position]["password"].isNull()))
     throw std::runtime_error("User session requires a saved username and password.");
+  validate(document);
   file.write(document);
   return result;
 }

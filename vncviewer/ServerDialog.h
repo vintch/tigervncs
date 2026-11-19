@@ -74,6 +74,9 @@ private:
   void expandManager(bool expanded);
   void editEntry(bool folder, bool existing);
   void closeEditor();
+  void layoutPowerOnEditor();
+  static void powerOnModeChanged(Fl_Widget*, void*);
+  void runPowerOn();
   void updateVpnProfiles(const std::string& selected = "");
   static void vpnAction(Fl_Widget*, void*);
   std::shared_ptr<powerTools::Job> powerJob;
@@ -87,7 +90,9 @@ private:
   Fl_Group *managerPane, *editor;
   Fl_Tree* tree;
   Fl_Input *entryName, *entryAddress, *entryUser, *entryPassword;
-  Fl_Choice *entryFolder, *entrySessionMode;
+  Fl_Choice *entryFolder, *entrySessionMode, *entryPowerOn;
+  Fl_Input *entryShellyAddress, *entryShellyUser, *entryShellyPassword;
+  Fl_Button *saveEntryButton, *cancelEntryButton;
   Fl_Check_Button *rememberPassword, *associateVpn;
   Fl_Choice *vpnProvider, *vpnProfile;
   std::vector<std::string> vpnProfileIds;

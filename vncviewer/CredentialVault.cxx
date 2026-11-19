@@ -64,7 +64,7 @@ void masterKey(Json::Value& document, Secret& key, bool create) {
   if (metadata.isNull()) {
     if (!create) throw std::runtime_error("The saved credential key is missing");
     for (const auto& connection : document["connections"])
-      if (!connection["password"].isNull())
+      if (!connection["password"].isNull() || (connection["powerOn"].isObject() && !connection["powerOn"]["password"].isNull()))
         throw std::runtime_error("The credential key is missing; existing passwords were not changed");
     check(BCryptGenRandom(nullptr, key.data(), ULONG(key.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG));
     DATA_BLOB input{DWORD(key.size()), key.data()}, output{};

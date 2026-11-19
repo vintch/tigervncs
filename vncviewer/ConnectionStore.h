@@ -26,7 +26,8 @@ public:
   std::string saveConnection(const std::string& id, const std::string& name,
     const std::string& address, const std::string& username, const std::string& folder,
     PasswordChange change, const std::string& password, const std::string& sessionMode = "",
-    const Json::Value& vpn = Json::Value());
+    const Json::Value& vpn = Json::Value(), const Json::Value& powerOn = Json::Value(),
+    PasswordChange shellyChange = KeepPassword, const std::string& shellyPassword = "");
   void remove(const std::string& id, bool folder);
   Json::Value connection(const std::string& id) const;
   bool prepareConnection(const std::string& id, const std::string& address, ConnectionCredentials& result,
