@@ -1,5 +1,113 @@
-About TigerVNC
-==============
+TigerVNCs
+=========
+
+TigerVNCs is a fork of `TigerVNC <https://github.com/TigerVNC/tigervnc>`_
+focused on a portable Windows viewer for macOS Screen Sharing and everyday
+remote administration. The Windows application is named **TigerVNCs.exe**.
+Its interface is in English. The original TigerVNC sources, licensing and
+acknowledgements are retained below.
+
+Features added in this fork
+--------------------------
+
+* **Fit the remote desktop to the window.** Toggle "Scale desktop to window"
+  in the session menu (Ctrl+Alt+M with the default shortcut modifiers) or
+  Options / Display. Aspect ratio, cursor scaling and mouse coordinates are
+  handled together; the preference survives restarts.
+* **Connection manager with nested folders.** Save computer addresses,
+  usernames and passwords; select an entry to fill the server field, or
+  double-click to connect. The context menu provides creation, editing,
+  deletion and sibling reordering. List visibility, folder expansion and
+  ordering are remembered.
+* **Protected saved passwords.** VNC and Shelly Plug passwords use
+  AES-256-GCM with a key protected by Windows DPAPI for the current account.
+  Copying the configuration alone to another account or computer does not
+  make those passwords usable there.
+* **macOS compatibility and session selection.** Apple Screen Sharing
+  connections use compatible encodings and RGB565 for reduced color depth.
+  Choose "Current screen" or "User session" per computer, or override it
+  for one connection through "Connect to". Saved credentials can be used
+  in both modes; User session requires a saved username and password.
+* **Persistent compression controls.** Save automatic/manual encoding,
+  color depth, compression level and JPEG quality preferences. Apple
+  connections fall back to compatible lossless encodings when necessary;
+  JPEG quality only applies when the server sends JPEG-compressed images.
+* **Connection recovery.** Initial failures offer Retry / Cancel. Sessions
+  recover automatically from network errors or response stalls while
+  retaining the desktop window and last image. Leaving a session returns
+  to the connection window. Establishment and active-session response
+  timeouts are separately configurable, both defaulting to four seconds.
+* **Asynchronous reachability indicators.** Visible computers are monitored
+  with staggered ICMP requests: green after a reply, blue after two failures.
+  Ping timing and enablement are configurable; monitoring pauses during VNC
+  sessions and recovery. Ping status does not gate SSH or VPN commands.
+* **Manual Wireguard and OpenVPN Connect controls.** Associate a VPN profile
+  with each computer and use the grey/amber/green VPN button to connect or
+  disconnect. Selecting a computer never connects a VPN automatically.
+  Wireguard elevation is retained by a restricted helper until TigerVNCs
+  closes. OpenVPN status combines adapter state with its connection log.
+* **SSH power tools for macOS.** Tools provides Power Off, Reboot, Force
+  Power Off and Force Reboot through PuTTY plink, with confirmation and a
+  hidden background invocation using the computer's saved credentials.
+  These commands require plink, SSH access and suitable administrator rights.
+* **Shelly Plug Power On.** Configure a plug IP address and separate login
+  credentials, then cycle its outlet through Tools / Power On. The delay
+  defaults to 15 seconds and is configurable in Options / Tools. A modal
+  progress window includes Cancel, which requests immediate restoration.
+  A cached green computer requires an additional confirmation. A device-side
+  backup timer also restores power if the viewer loses connectivity.
+* **One portable configuration file.** Preferences, history, saved computers,
+  encrypted credentials, VPN associations and folder state live in
+  ``tigervncs.json`` beside the actual executable. Legacy registry preferences
+  are imported once; new preferences are saved to JSON.
+* **Standalone Windows build.** A repository-local build script produces a
+  single Windows x64 executable without additional non-system runtime DLLs.
+
+Getting started
+---------------
+
+Build the viewer as described below, then run ``dist/TigerVNCs.exe`` from a
+writable directory. **Computers** opens the saved connection list. Right-click
+the list to add computers or folders. **Options** contains compression,
+display, network, VPN and power-tool settings.
+
+Optional tools are installed separately: PuTTY plink for SSH actions,
+Wireguard and/or OpenVPN Connect for VPN control, and a compatible Shelly
+Plug for outlet control. The Mac must be configured to start when power
+returns for Shelly Power On to start it.
+
+SSH power actions automatically accept the server's currently presented host
+key without saving it; they do not verify its identity against a trusted key.
+Shut down a running computer before cycling its outlet. See the
+`viewer guide <doc/tigervncs-portable.txt>`_ and
+`Shelly Plug guide <doc/shelly-power.md>`_ for behavior and requirements.
+
+Building on Windows
+-------------------
+
+From PowerShell in a checkout, run::
+
+    .\build-windows.ps1 -Bootstrap -RunTests
+
+The first build downloads MSYS2 and installs the toolchain and dependencies
+inside ``.tools`` in the checkout. It needs network access and a Windows short
+path without spaces (the script checks this). Subsequent builds use::
+
+    .\build-windows.ps1 -RunTests
+
+Output: ``dist/TigerVNCs.exe`` and ``dist/build-info.json`` containing the
+source revision, checksum and dependency information. The script excludes
+``.tools``, ``build`` and ``dist`` from commits. Keep personal
+``tigervncs.json`` files out of version control.
+
+The Windows unit suite currently contains 357 tests. Additional isolated
+integration checks are documented in `tests/integration/README.md
+<tests/integration/README.md>`_. General upstream build instructions remain in
+`BUILDING.txt <BUILDING.txt>`_.
+
+
+About upstream TigerVNC
+======================
 
 Virtual Network Computing (VNC) is a remote display system which allows you to
 view and interact with a virtual desktop environment that is running on another

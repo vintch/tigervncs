@@ -2,6 +2,27 @@
 **     Building TigerVNC
 *******************************************************************************
 
+TigerVNCs portable Windows build
+===============================
+
+This fork includes a repository-local Windows x64 build script. From PowerShell
+in the checkout, run:
+
+    .\build-windows.ps1 -Bootstrap -RunTests
+
+The first run downloads MSYS2 and installs dependencies under .tools. Subsequent
+builds can omit -Bootstrap. The checkout must have a Windows short path without
+spaces; the script reports an error if it does not. No global tool installation
+or modification of an installed TigerVNC is required.
+
+The standalone English-language viewer is dist/TigerVNCs.exe. Build provenance,
+SHA-256 and runtime dependencies are recorded in dist/build-info.json. -RunTests
+builds and runs the Windows unit suite; optional integration probes are described
+in tests/integration/README.md. Omitting -RunTests builds only the viewer.
+
+The following sections retain the upstream build guidance for other platforms
+and manual builds.
+
 
 ================================
 Build requirements (all systems)

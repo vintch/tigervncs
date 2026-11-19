@@ -46,7 +46,8 @@ The optional expanded boolean on each folder persists its open/closed state.
 Visible computers (all ancestor folders open, including top-level computers)
 are monitored while the connection list is expanded. One ICMP echo is sent per
 attempt. For N computers, the inter-packet interval is max(1 second, 3/N seconds)
-and each computer is checked no more often than every three seconds. Thus more
+and each computer is checked no more often than every three seconds. These are
+the defaults; Options / Network configures both timing values. Thus more
 than three computers have a longer polling cycle. All packets in this process
 share an additional rate limiter. A reply turns the icon green; two consecutive
 failures/timeouts turn it blue. One success resets the failure streak. Blue
@@ -126,8 +127,9 @@ macOS session selection
 -----------------------
 The computer editor offers Current screen (default) and User session. The JSON
 sessionMode field stores current-screen or user-session. Missing/null fields
-default to Current screen. User session requires a saved username and password;
-it uses Apple account authentication and requests that account's desktop.
+default to Current screen. Saved username/password credentials are used for
+Current screen authentication too. User session requires a saved username and
+password; it uses Apple account authentication and requests that account's desktop.
 macOS may reuse an existing desktop for the account, including its console
 desktop if that same account is already active there.
 
@@ -165,10 +167,11 @@ SSH power tools
 ---------------
 Options / Tools stores PlinkExecutable (default C:\Program Files\PuTTY\plink.exe)
 in the viewer section of tigervncs.json. A computer's Tools submenu offers
-Power Off, Reboot, Force Power Off and Force Reboot. The submenu and all four
+Power Off, Reboot, Force Power Off and Force Reboot. These four
 actions are disabled if plink is missing/not executable, either the username
 or encrypted saved password is absent, or another power action is pending.
 Ping status is purely informational and is never consulted for these actions.
+Tools / Power On is independent of SSH availability; see Shelly Plug below.
 
 Every action asks for confirmation, with an additional unsaved-data notice for
 Force. Only the selected saved computer's own credentials are decrypted, from
@@ -273,7 +276,31 @@ the vendor client are reflected by the next network-status query.
 Reference: https://support.openvpn.com/hc/en-us/articles/41389237225499-OpenVPN-Connect-Workaround-for-CLI-Based-Connect-Disconnect-on-macOS-and-Windows
 Reference: https://git.zx2c4.com/wireguard-windows/about/docs/enterprise.md
 
-Live validation used only user-approved profiles: OpenVPN Praxis Dr. Eshagzaiy
-and Hautaerzte; Wireguard eshagzaiy_versatel_wg_config and Hautaerzte-wg_config.
-The initial disconnected state is restored after these tests. Test-only probe
-and CLI-stub executables are excluded from the distributed artifact.
+Live validation uses only explicitly approved profiles and restores the initial
+connection state. Test-only probe and CLI-stub executables are excluded from
+the distributed artifact. Do not commit personal profile lists or credentials.
+
+Shelly Plug Power On
+--------------------
+The computer editor's Power On choice defaults to None. Shelly Plug enables
+IP address, login and password fields. Its password is encrypted separately
+from the computer's VNC/SSH password with the same account-protected key.
+Leaving the password blank on an existing entry keeps the saved secret.
+
+Tools / Power On is available only for a configured Shelly Plug, independently
+of plink, saved SSH credentials and ping reachability. It always asks for
+confirmation. A computer marked green by the existing monitor needs an extra
+confirmation; Power On does not issue an additional ping.
+
+Options / Tools sets ShellyPlugDelaySeconds (default 15, range 1-3600). The
+background worker switches the outlet off, waits with a modal progress window,
+then switches it on. Cancel or closing the progress window skips the remaining
+delay and requests restoration. An in-flight off request finishes before on
+is sent so a late off response cannot reverse cancellation. Failed requests
+are reported, and restoration is attempted even if the off response was lost.
+
+The device's one-shot timer provides backup restoration if the viewer exits
+or loses connectivity. The tested device is a Gen1 Shelly Plug S; local HTTP
+Basic and SHA-256 Digest authentication are supported. The Mac must be set to
+start when power returns. Shut down a running Mac before cycling its outlet.
+See doc/shelly-power.md for the API and detailed behavior.
