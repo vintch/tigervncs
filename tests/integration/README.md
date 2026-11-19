@@ -80,6 +80,9 @@ The `rdpclient` unit target launches itself as a non-networking mstsc substitute
 to verify the process lifetime, temporary credential handoff and restoration.
 It also checks protocol defaults, port syntax, endpoint binding and restoration
 of the native password/certificate prompt flags without changing other settings.
+Recovery tests leave a persisted snapshot behind to simulate interruption,
+then verify manual restoration and recovery before the next connection. They
+use isolated native-preference files and JSON, never the user's Default.rdp.
 For explicitly authorized live RDP checks, build `rdp_client_probe`. Its `seed`
 operation takes a config path, host and username; supply the password through
 standard input, never command-line arguments. Then `connect <config>` runs the
@@ -87,3 +90,10 @@ production launcher. Use an isolated viewer/config under `build/` to verify
 Connect and double-click, hidden/restored manager state, and disabled macOS
 session options. Tests must not send input or execute commands on the remote
 desktop; disconnect by closing the local client or terminating its test PID.
+
+Options / RDP exposes startup dimensions and Restore default RDP settings.
+The restore action changes native prompt preferences immediately; test its
+backend using isolated fixtures. Options / Input exposes Disable local mouse
+cursor. The server-provided local cursor image and hotspot stay unscaled at
+all framebuffer zoom levels; only pointer coordinates use the desktop transform.
+The local cursor hiding option does not remove a cursor baked into server pixels.

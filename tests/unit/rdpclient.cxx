@@ -33,6 +33,13 @@ TEST(RdpClient, NativeLaunchArgumentsNeedNoConnectionFileOrPassword) {
   EXPECT_EQ(rdpClient::arguments(settings).find(settings.username),std::string::npos);
   settings.address="host /admin"; EXPECT_THROW(rdpClient::arguments(settings),std::runtime_error);
 }
+TEST(RdpClient, ConfigurableStartingDimensionsArePassedToMstsc) {
+  int oldWidth=rdpClient::windowWidth,oldHeight=rdpClient::windowHeight;
+  rdpClient::windowWidth.setParam(1600); rdpClient::windowHeight.setParam(900);
+  rdpClient::Settings settings; settings.address="host";
+  EXPECT_EQ(rdpClient::arguments(settings),"/v:host /w:1600 /h:900");
+  rdpClient::windowWidth.setParam(oldWidth); rdpClient::windowHeight.setParam(oldHeight);
+}
 TEST(RdpClient, SavedProtocolAndPasswordStayBoundToTheirEndpoint) {
   const char* path="rdp-store-test.json"; std::remove(path); ConnectionStore store(path);
   auto id=store.saveConnection("","PC","HOST:3390","user","",ConnectionStore::SetPassword,"secret",
@@ -129,6 +136,51 @@ TEST(RdpClient, MissingNativeDefaultIsTemporary) {
   const char* path="rdp-default-missing-test.rdp"; std::remove(path);
   { rdpClient::DefaultSettingsLease lease(core::utf8ToUTF16(path)); std::ifstream file(path); EXPECT_TRUE(file.good()); }
   std::ifstream file(path); EXPECT_FALSE(file.good());
+}
+TEST(RdpClient, RecoverySnapshotSurvivesAnInterruptedSession) {
+  const char* path="rdp-recovery-native.rdp"; const char* config="rdp-recovery.json";
+  std::remove(config);
+  const std::string original="prompt for credentials:i:1\nauthentication level:i:3\ncustom:s:keep\n";
+  { std::ofstream file(path); file<<original; }
+  {
+    rdpClient::DefaultSettingsLease lease(core::utf8ToUTF16(path),config);
+    EXPECT_EQ(PortableConfig(config).read()["rdpRecovery"]["version"],1);
+    EXPECT_THROW(rdpClient::restoreDefaultSettingsForTest(core::utf8ToUTF16(path),config),std::runtime_error);
+    lease.abandonForTest();
+  }
+  EXPECT_TRUE(rdpClient::restoreDefaultSettingsForTest(core::utf8ToUTF16(path),config));
+  std::ifstream file(path); std::string restored((std::istreambuf_iterator<char>(file)),{}); file.close();
+  EXPECT_EQ(restored,original); EXPECT_TRUE(PortableConfig(config).read()["rdpRecovery"].isNull());
+  std::remove(path); std::remove(config);
+}
+TEST(RdpClient, NewSessionRecoversPendingSettingsBeforeSavingItsSnapshot) {
+  const char* path="rdp-recover-reconnect.rdp"; const char* config="rdp-reconnect.json";
+  std::remove(config);
+  const std::string original="prompt for credentials:i:1\nauthentication level:i:2\n";
+  { std::ofstream file(path); file<<original; }
+  { rdpClient::DefaultSettingsLease lease(core::utf8ToUTF16(path),config); lease.abandonForTest(); }
+  { rdpClient::DefaultSettingsLease lease(core::utf8ToUTF16(path),config); }
+  std::ifstream file(path); std::string restored((std::istreambuf_iterator<char>(file)),{}); file.close();
+  EXPECT_EQ(restored,original); EXPECT_TRUE(PortableConfig(config).read()["rdpRecovery"].isNull());
+  std::remove(path); std::remove(config);
+}
+TEST(RdpClient, RecoveryRemovesADefaultFileCreatedByAnInterruptedSession) {
+  const char* path="rdp-recovery-created.rdp"; const char* config="rdp-recovery-created.json";
+  std::remove(path); std::remove(config);
+  { rdpClient::DefaultSettingsLease lease(core::utf8ToUTF16(path),config); lease.abandonForTest(); }
+  EXPECT_TRUE(rdpClient::restoreDefaultSettingsForTest(core::utf8ToUTF16(path),config));
+  std::ifstream file(path); EXPECT_FALSE(file.good());
+  EXPECT_TRUE(PortableConfig(config).read()["rdpRecovery"].isNull());
+  std::remove(config);
+}
+TEST(RdpClient, ManualRestoreWithoutSnapshotEnablesPromptsAndKeepsOtherFields) {
+  const char* path="rdp-reset-native.rdp"; const char* config="rdp-reset.json";
+  std::remove(config);
+  { std::ofstream file(path); file<<"prompt for credentials:i:0\nauthentication level:i:0\ncustom:s:keep\n"; }
+  EXPECT_FALSE(rdpClient::restoreDefaultSettingsForTest(core::utf8ToUTF16(path),config));
+  std::ifstream file(path); std::string restored((std::istreambuf_iterator<char>(file)),{}); file.close();
+  EXPECT_EQ(restored,"prompt for credentials:i:1\nauthentication level:i:2\ncustom:s:keep\n");
+  std::remove(path); std::remove(config);
 }
 int main(int argc,char** argv) {
   if(argc==4 && std::string(argv[1]).find("/v:")==0) {
