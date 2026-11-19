@@ -32,7 +32,7 @@ Fl_Image* vpnPlanet(vpnControl::Colour colour) {
 bool confirmVpnElevation() {
   Fl_Window window(440, 170, "TigerVNCs"); Choice choice; choice.window = &window;
   auto note = new Fl_Box(20, 15, 400, 85,
-    "Administrator permission is required to control this Wireguard tunnel.\n\nElevate privileges for this command?");
+    "Administrator permission is required for Wireguard.\n\nKeep administrator access until TigerVNCs is closed?");
   note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(14);
   auto no = new Fl_Button(195, 120, 105, 30, "Cancel"); no->callback(cancel, &choice);
   auto yes = new Fl_Return_Button(310, 120, 110, 30, "Elevate"); yes->image(shield);

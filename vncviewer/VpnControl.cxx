@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "VpnControl.h"
+#include "VpnElevation.h"
 #include <core/string.h>
 #include <algorithm>
 #include <cctype>
@@ -259,27 +260,7 @@ Result controlWireguard(const Settings& settings, bool connect, const std::vecto
   }
   return Result::Ok;
 }
-Result elevated(const Settings& settings, bool connect, const std::vector<std::string>& profiles) {
-  std::vector<wchar_t> file(32768);
-  DWORD size = GetModuleFileNameW(nullptr, file.data(), DWORD(file.size()));
-  if (!size || size == file.size()) return Result::Error;
-  std::wstring args = L"--vpn-wireguard-control " + argument(connect ? "connect" : "disconnect") + L" " + argument(settings.wireguardDirectory);
-  for (const auto& profile : profiles) {
-    if (!validWireguardProfile(profile)) return Result::Error;
-    args += L" " + argument(profile);
-  }
-  HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-  SHELLEXECUTEINFOW info{}; info.cbSize = sizeof(info); info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
-  info.lpVerb = L"runas"; info.lpFile = file.data(); info.lpParameters = args.c_str(); info.nShow = SW_HIDE;
-  bool launched = ShellExecuteExW(&info) != FALSE; DWORD error = GetLastError();
-  if (SUCCEEDED(initialized)) CoUninitialize();
-  if (!launched) return error == ERROR_CANCELLED ? Result::Cancelled : Result::Error;
-  Handle child; child.value = info.hProcess;
-  if (!child.value || WaitForSingleObject(child.value, 45000) != WAIT_OBJECT_0) return Result::Error;
-  DWORD code = 1;
-  if (!GetExitCodeProcess(child.value, &code)) return Result::Error;
-  return code == 0 ? Result::Ok : Result::Error;
-}
+
 }
 #endif
 Snapshot query(const Settings& settings) {
@@ -316,7 +297,8 @@ std::shared_ptr<CommandJob> startCommand(const Settings& settings, const std::st
     std::thread([settings, provider, connect, profiles, elevate, job]() {
       try {
 #ifdef WIN32
-        job->result = elevate && provider == "wireguard" ? elevated(settings, connect, profiles) : command(settings, provider, connect, profiles);
+        job->result = provider == "wireguard" && (elevate || vpnElevation::active()) ?
+          vpnElevation::execute(settings, connect, profiles, elevate) : command(settings, provider, connect, profiles);
 #else
         job->result = command(settings, provider, connect, profiles);
 #endif
@@ -327,6 +309,7 @@ std::shared_ptr<CommandJob> startCommand(const Settings& settings, const std::st
   return job;
 }
 bool helper(int argc, char** argv, int& result) {
+  if (vpnElevation::helper(argc, argv, result)) return true;
   if (argc < 2 || std::string(argv[1]) != "--vpn-wireguard-control") return false;
 #ifdef WIN32
   int wideCount = 0; auto wide = CommandLineToArgvW(GetCommandLineW(), &wideCount);

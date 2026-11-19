@@ -236,11 +236,24 @@ using the installed WireGuard executable and the associated .conf.dpapi/.conf
 in WireGuardConfigurationDirectory. Services controlled through this manual
 button are changed to demand/manual startup, preventing automatic VPN
 connection when Windows next boots. Start/stop waits are bounded. Access
-denied shows an Elevate confirmation with a shield; only after agreement is
-an isolated copy of TigerVNCs run using Windows elevation. The helper accepts
-only validated Wireguard actions/profiles and exits before preference loading,
-so the main process and JSON credentials stay under the normal user account.
+denied shows an Elevate confirmation with a shield. After agreement, a hidden
+elevated helper stays available for the lifetime of this TigerVNCs process.
+Subsequent Wireguard commands reuse the same helper without another UAC or
+Elevate confirmation. It also survives returning from a VNC session to the
+manager. The main window, selection and unsaved editor contents are preserved.
 Cancelling elevation does not show an error or connect anything.
+
+The helper accepts only validated Wireguard actions/profiles over a private,
+local-only named pipe. Both ends verify process identity, the helper checks
+that its parent is the same executable, and elevated impersonation is disabled.
+Requests/responses are bounded and serialized; there is no general shell or
+arbitrary executable interface. No approval/token/pipe address is saved on disk,
+no service is installed for the helper, and it exits when its parent exits or
+the private connection closes. Its startup branch runs before preferences or
+credentials are loaded. The main process and JSON stay under the normal user
+account, including when UAC uses a separate administrator account. Closing and
+restarting TigerVNCs requires elevation again. If the helper is unexpectedly
+lost, another elevation is requested explicitly instead of silently prompting.
 
 Options / VPN adds OpenVPNConnectLogFile (default
 %APPDATA%\OpenVPN Connect\log\ovpn.log). The actual connected state comes

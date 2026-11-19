@@ -42,10 +42,15 @@ if(WIN32)
   target_include_directories(connection_fixture SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
   target_link_libraries(connection_fixture PRIVATE network core jsoncpp_static
     ${FLTK_LIBRARIES} bcrypt crypt32)
+  add_executable(vpnelevation vpnelevation.cxx ../../vncviewer/VpnElevation.cxx
+    ../../vncviewer/VpnControl.cxx ../../vncviewer/VpnProfiles.cxx)
+  target_compile_definitions(vpnelevation PRIVATE TIGERVNCS_VPN_BROKER_TEST)
+  target_link_libraries(vpnelevation PRIVATE network core GTest::gtest jsoncpp_static iphlpapi bcrypt)
+  gtest_discover_tests(vpnelevation)
   add_executable(vpn_control_probe EXCLUDE_FROM_ALL ../integration/vpn_control_probe.cxx
-    ../../vncviewer/VpnControl.cxx ../../vncviewer/VpnProfiles.cxx ../../vncviewer/PortableConfig.cxx)
+    ../../vncviewer/VpnControl.cxx ../../vncviewer/VpnElevation.cxx ../../vncviewer/VpnProfiles.cxx ../../vncviewer/PortableConfig.cxx)
   target_include_directories(vpn_control_probe SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
-  target_link_libraries(vpn_control_probe PRIVATE network core jsoncpp_static ${FLTK_LIBRARIES} iphlpapi)
+  target_link_libraries(vpn_control_probe PRIVATE network core jsoncpp_static ${FLTK_LIBRARIES} iphlpapi bcrypt)
   add_executable(power_tools_probe EXCLUDE_FROM_ALL ../integration/power_tools_probe.cxx
     ../../vncviewer/PowerTools.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)
   target_include_directories(power_tools_probe SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
@@ -57,7 +62,7 @@ if(WIN32)
     target_link_options(vpn_cli_stub PRIVATE -municode)
   endif()
   add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx presence.cxx sessionliveness.cxx networksettings.cxx powertools.cxx vpncontrol.cxx
-    ../../vncviewer/NetworkSettings.cxx ../../vncviewer/PowerTools.cxx ../../vncviewer/VpnControl.cxx
+    ../../vncviewer/NetworkSettings.cxx ../../vncviewer/PowerTools.cxx ../../vncviewer/VpnControl.cxx ../../vncviewer/VpnElevation.cxx
     ../../vncviewer/PresenceMonitor.cxx ../../vncviewer/ConnectionStore.cxx
     ../../vncviewer/VpnProfiles.cxx
     ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx

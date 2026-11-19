@@ -12,6 +12,7 @@ add_executable(vncviewer
   NetworkSettings.cxx
   VpnProfiles.cxx
   VpnControl.cxx
+  VpnElevation.cxx
   VpnUi.cxx
   PowerTools.cxx
   CredentialVault.cxx
