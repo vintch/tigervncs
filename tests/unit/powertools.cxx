@@ -102,3 +102,11 @@ TEST(PowerTools, AsyncDispatchUsesAnImmutableEncryptedCredentialSnapshot) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   ASSERT_TRUE(job->done.load(std::memory_order_acquire)); EXPECT_TRUE(job->success);
 }
+
+TEST(PowerTools, ParsesOnlyCompleteTemporaryServerFingerprints) {
+  const std::string key = "SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+  EXPECT_EQ(powerTools::fingerprintFromOutput("Host key fingerprint is:\r\nssh-ed25519 255 " + key + "\r\n"), key);
+  EXPECT_EQ(powerTools::fingerprintFromOutput("unrelated " + key), "");
+  EXPECT_EQ(powerTools::fingerprintFromOutput("Host key fingerprint is:\nSHA256:short"), "");
+  EXPECT_EQ(powerTools::fingerprintFromOutput("Host key fingerprint is:\n" + key + "unexpected"), "");
+}

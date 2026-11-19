@@ -176,10 +176,13 @@ an immutable snapshot taken before confirmation. SSH uses port 22 on the host
 part of the VNC address; its VNC port/display number is not an SSH port.
 
 The Mac must allow Remote Login, and the saved account must be permitted to run
-sudo. Plink >= 0.78 is required for -pwfile. The host key must be trusted in
-PuTTY, or pinned explicitly in the computer's optional sshHostKey JSON field.
-Batch mode rejects unknown/mismatched keys without prompts or accepting them.
-There is no bypass of SSH host-key verification.
+sudo. Plink >= 0.78 is required for -pwfile. Before every action, a hidden, credential-free plink probe discovers the
+server's currently presented fingerprint. The actual command accepts that key
+for this invocation using -hostkey, without confirmation or persistence in
+JSON/the PuTTY host-key cache. New and changed keys are accepted alike.
+Both phases share the same 15-second deadline.
+The optional legacy sshHostKey field is no longer used. This deliberately
+disables SSH server-identity verification, as requested by the user.
 
 All process work is isolated on a background thread with a 15-second deadline,
 a hidden console-free child, restricted inherited handles and a kill-on-close

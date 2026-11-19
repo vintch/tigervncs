@@ -64,6 +64,18 @@ std::string remoteCommand(Action action, const std::string& token) {
   return "test \"$(/usr/bin/uname -s)\" = Darwin || exit 1; "
     "/usr/bin/sudo -S -p '' -- /bin/sh -c " + shellQuote(privileged);
 }
+std::string fingerprintFromOutput(const std::string& output) {
+  auto marker = output.find("Host key fingerprint is:");
+  if (marker == std::string::npos) return "";
+  auto start = output.find("SHA256:", marker);
+  if (start == std::string::npos || output.size() - start < 50) return "";
+  for (size_t i = start + 7; i < start + 50; ++i) {
+    unsigned char c = output[i];
+    if (!std::isalnum(c) && c != '+' && c != '/') return "";
+  }
+  if (output.size() > start + 50 && output[start + 50] != '\r' && output[start + 50] != '\n' && output[start + 50] != ' ') return "";
+  return output.substr(start, 50);
+}
 #ifdef WIN32
 namespace {
 struct Handle {
@@ -81,6 +93,56 @@ std::wstring argument(const std::string& text) {
   }
   result.append(2 * slashes, L'\\'); return result + L'"';
 }
+std::string discoverHostKey(const std::string& executable, const Request& request, ULONGLONG deadline) {
+  // PuTTY 0.83 has no accept-any-key switch. A deliberately nonmatching
+  // temporary key makes a credential-free probe report the presented key,
+  // even when a different key is already cached. Nothing is persisted.
+  SECURITY_ATTRIBUTES inherit{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+  Handle output, writer, input;
+  if (!CreatePipe(&output.value, &writer.value, &inherit, 0) ||
+      !SetHandleInformation(output.value, HANDLE_FLAG_INHERIT, 0)) return "";
+  input.value = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherit, OPEN_EXISTING, 0, nullptr);
+  if (input.value == INVALID_HANDLE_VALUE) return "";
+  STARTUPINFOEXW startup{}; startup.StartupInfo.cb = sizeof(startup);
+  startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW; startup.StartupInfo.wShowWindow = SW_HIDE;
+  startup.StartupInfo.hStdInput = input.value; startup.StartupInfo.hStdOutput = startup.StartupInfo.hStdError = writer.value;
+  SIZE_T size = 0; InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
+  std::vector<unsigned char> storage(size);
+  startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(storage.data());
+  if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &size)) return "";
+  struct Attributes { LPPROC_THREAD_ATTRIBUTE_LIST value; ~Attributes() { DeleteProcThreadAttributeList(value); } } attributes{startup.lpAttributeList};
+  HANDLE inherited[] = {input.value, writer.value};
+  if (!UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr)) return "";
+  auto path = core::utf8ToUTF16(executable.c_str());
+  auto command = argument(executable) + L" -v -ssh -batch -T -noagent -noshare -no-antispoof -P 22 -l " + argument(request.username) +
+    L" -hostkey SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA " + argument(request.host) + L" /usr/bin/true";
+  PROCESS_INFORMATION process{};
+  Handle job; job.value = CreateJobObjectW(nullptr, nullptr);
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{}; limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  if (!job.value || !SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) return "";
+  if (!CreateProcessW(path.c_str(), &command[0], nullptr, nullptr, TRUE,
+      CREATE_NO_WINDOW | CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr, &startup.StartupInfo, &process)) return "";
+  Handle child, thread; child.value = process.hProcess; thread.value = process.hThread;
+  struct ChildGuard { HANDLE value; ~ChildGuard() { if (WaitForSingleObject(value, 0) != WAIT_OBJECT_0) { TerminateProcess(value, 1); WaitForSingleObject(value, 1000); } } } childGuard{child.value};
+  if (!AssignProcessToJobObject(job.value, child.value) || ResumeThread(thread.value) == DWORD(-1)) return "";
+  CloseHandle(writer.value); writer.value = nullptr;
+  std::string response;
+  for (;;) {
+    DWORD available = 0;
+    if (PeekNamedPipe(output.value, nullptr, 0, nullptr, &available, nullptr) && available) {
+      char buffer[4096]; DWORD count = 0;
+      if (!ReadFile(output.value, buffer, std::min<DWORD>(available, sizeof(buffer)), &count, nullptr)) return "";
+      response.append(buffer, count);
+      if (response.size() > 65536) return "";
+    }
+    if (GetTickCount64() >= deadline) return "";
+    if (WaitForSingleObject(child.value, 20) == WAIT_OBJECT_0) {
+      DWORD remaining = 0;
+      if (PeekNamedPipe(output.value, nullptr, 0, nullptr, &remaining, nullptr) && remaining) continue;
+      return fingerprintFromOutput(response);
+    }
+  }
+}
 bool writeOverlapped(HANDLE pipe, HANDLE event, const std::string& text, ULONGLONG deadline) {
   ResetEvent(event); OVERLAPPED operation{}; operation.hEvent = event;
   DWORD written = 0;
@@ -97,9 +159,10 @@ bool writeOverlapped(HANDLE pipe, HANDLE event, const std::string& text, ULONGLO
 bool run(const std::string& executable, const Request& request, unsigned timeoutMs) {
   if (!executableAvailable(executable) || request.host.empty() || request.host[0] == '-' || request.username.empty() ||
       request.password.find_first_of("\r\n") != std::string::npos || request.password.find('\0') != std::string::npos ||
-      request.password.size() > 4096 || request.username.find('\0') != std::string::npos || request.host.find('\0') != std::string::npos ||
-      request.hostKey.find('\0') != std::string::npos) return false;
+      request.password.size() > 4096 || request.username.find('\0') != std::string::npos || request.host.find('\0') != std::string::npos) return false;
   auto deadline = GetTickCount64() + timeoutMs;
+  const auto hostKey = discoverHostKey(executable, request, deadline);
+  if (hostKey.empty()) return false;
   Handle token;
   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token.value)) return false;
   DWORD needed = 0; GetTokenInformation(token.value, TokenUser, nullptr, 0, &needed);
@@ -143,7 +206,8 @@ bool run(const std::string& executable, const Request& request, unsigned timeout
   HANDLE inherited[] = {input.value, outputWriter.value, errors.value};
   if (!UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr)) return false;
   std::wstring line = argument(executable) + L" -ssh -batch -T -noagent -noshare -no-antispoof -P 22 -l " + argument(request.username) + L" -pwfile " + argument(pipeName);
-  if (!request.hostKey.empty()) line += L" -hostkey " + argument(request.hostKey);
+  // Accept the key discovered for this invocation, without a persistent pin.
+  line += L" -hostkey " + argument(hostKey);
   line += L" " + argument(request.host) + L" " + argument(remoteCommand(request.action, nonce));
   Handle job; job.value = CreateJobObjectW(nullptr, nullptr);
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{}; limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
@@ -239,7 +303,6 @@ std::shared_ptr<Job> start(Json::Value document, const std::string& computerId, 
           request.username = computer["username"].asString(); request.action = action;
           if (computer["password"].isNull()) break;
           request.password = CredentialVault::decrypt(document, computerId, computer["password"]);
-          if (computer["sshHostKey"].isString()) request.hostKey = computer["sshHostKey"].asString();
           job->success = execute(executable, request); break;
         }
       } catch (...) { job->success = false; }

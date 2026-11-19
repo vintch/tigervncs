@@ -15,9 +15,10 @@ bool available();
 bool menuEnabled(const Json::Value& computer, bool plinkPresent, bool busy = false);
 bool executableAvailable(const std::string& path);
 std::string sshHost(const std::string& address);
+std::string fingerprintFromOutput(const std::string& output);
 std::string remoteCommand(Action action, const std::string& token);
 struct Request {
-  std::string host, username, password, hostKey;
+  std::string host, username, password;
   Action action = Action::PowerOff;
   ~Request();
 };

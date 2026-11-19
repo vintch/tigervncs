@@ -10,15 +10,24 @@ int wmain(int argc, wchar_t** argv) {
   std::string mode = setting ? setting : "success";
   if (mode == "early-exit") return 1;
   if (mode == "timeout-connect") { Sleep(10000); return 1; }
+  bool discovery = false;
+  for (int i = 1; i < argc; ++i) if (std::wstring(argv[i]) == L"-v") discovery = true;
+  if (discovery) {
+    const char output[] = "Host key fingerprint is:\r\nssh-ed25519 255 SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\r\n";
+    DWORD count;
+    WriteFile(GetStdHandle(STD_ERROR_HANDLE), output, sizeof(output)-1, &count, nullptr);
+    return 1;
+  }
   const std::string expected = "p@ss ' quote \\ special!";
   if (std::wstring(GetCommandLineW()).find(L"p@ss") != std::wstring::npos) return 21;
   std::wstring pipe, user, host; std::string command;
-  bool batch = false, noAgent = false, noShare = false;
+  bool batch = false, noAgent = false, noShare = false, temporaryKey = false;
   for (int i = 1; i < argc; ++i) {
     std::wstring arg = argv[i];
     if (arg == L"-pwfile" && i + 1 < argc) pipe = argv[++i];
     else if (arg == L"-l" && i + 1 < argc) user = argv[++i];
-    else if ((arg == L"-P" || arg == L"-hostkey") && i + 1 < argc) ++i;
+    else if (arg == L"-P" && i + 1 < argc) ++i;
+    else if (arg == L"-hostkey" && i + 1 < argc) temporaryKey = std::wstring(argv[++i]) == L"SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
     else if (arg == L"-batch") batch = true;
     else if (arg == L"-noagent") noAgent = true;
     else if (arg == L"-noshare") noShare = true;
@@ -27,7 +36,7 @@ int wmain(int argc, wchar_t** argv) {
       else command.assign(arg.begin(), arg.end());
     }
   }
-  if (!batch || !noAgent || !noShare || user != L"user name\"quote" || host != L"127.0.0.1") return 22;
+  if (!batch || !noAgent || !noShare || !temporaryKey || user != L"user name\"quote" || host != L"127.0.0.1") return 22;
   FILE* file = _wfopen(pipe.c_str(), L"rb");
   if (!file) return 23;
   char buffer[8192]{};

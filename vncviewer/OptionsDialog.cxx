@@ -1648,7 +1648,7 @@ void OptionsDialog::createToolsPage(int tx, int ty, int tw, int th)
   auto note = new Fl_Box(tx + 15, ty + 100, tw - 30, 135,
     "Power tools use the computer's saved username and password.\n"
     "The Mac must allow SSH on port 22 and administrator commands.\n"
-    "Its SSH host key must already be trusted in PuTTY.\n"
+    "SSH host keys are accepted automatically and are not saved.\n"
     "Force actions may discard unsaved data.");
   note->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP); note->labelsize(13);
   group->end();

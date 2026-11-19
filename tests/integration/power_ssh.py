@@ -2,9 +2,8 @@
 
 Requires Paramiko in .tools/ssh-test-python and a free loopback TCP port 22.
 """
-import base64
-import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -13,10 +12,12 @@ import socket
 import subprocess
 import sys
 import threading
+import winreg
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / ".tools" / "ssh-test-python"))
 import paramiko
+logging.getLogger("paramiko").setLevel(logging.CRITICAL)
 
 PASSWORD = "p@ss ' quote \\ special!"
 USERNAME = 'user name"quote'
@@ -41,6 +42,15 @@ class Server(paramiko.ServerInterface):
         return True
 
 
+def host_keys():
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\SimonTatham\PuTTY\SshHostKeys")
+    except FileNotFoundError:
+        return None
+    with key:
+        return [winreg.EnumValue(key, i) for i in range(winreg.QueryInfoKey(key)[1])]
+
+
 def main():
     directory = ROOT / "build" / "power ssh integration"
     directory.mkdir(parents=True, exist_ok=True)
@@ -53,8 +63,6 @@ def main():
     subprocess.run([str(directory / "connection_fixture.exe")], env=env, capture_output=True, check=True, timeout=5)
     document = json.loads(config.read_text())
     document["viewer"]["PlinkExecutable"] = r"C:\Program Files\PuTTY\plink.exe"
-    key = paramiko.RSAKey.generate(2048)
-    fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
     computer = document["connections"][0]
     results = []
     for action, fragment, accepted in (
@@ -64,8 +72,11 @@ def main():
         ("Force Reboot", "/sbin/reboot -q", True),
         ("Reboot", "/sbin/shutdown -r now", False),
     ):
-        computer["sshHostKey"] = fingerprint
+        # A different, uncached key on every connection must be accepted.
+        key = paramiko.RSAKey.generate(2048)
         config.write_text(json.dumps(document))
+        before_keys = host_keys()
+        before_config = config.read_bytes()
         listener = socket.socket()
         listener.bind(("127.0.0.1", 22))
         listener.listen(1)
@@ -77,6 +88,20 @@ def main():
         def serve():
             transport = None
             try:
+                # Discovery must stop at host-key verification, without ever
+                # sending the saved username/password for authentication.
+                connection, _ = listener.accept()
+                discovery = Server()
+                scan = paramiko.Transport(connection)
+                scan.add_server_key(key)
+                try:
+                    scan.start_server(server=discovery)
+                    scan.accept(5)
+                except (EOFError, ConnectionResetError):
+                    pass
+                finally:
+                    scan.close()
+                assert not discovery.authenticated and discovery.command is None
                 connection, _ = listener.accept()
                 transport = paramiko.Transport(connection)
                 transport.add_server_key(key)
@@ -121,9 +146,12 @@ def main():
         assert not thread.is_alive() and not errors, (errors, result.stdout.decode(errors="replace"), result.stderr.decode(errors="replace"))
         assert server.authenticated and stdin_matches == [True]
         assert (result.returncode == 0) == accepted, (action, result.returncode)
+        assert host_keys() == before_keys, "PuTTY host keys were persisted"
+        assert config.read_bytes() == before_config, "SSH modified the JSON config"
         results.append({"action": action, "expectedAccepted": accepted, "passed": True})
     print(json.dumps({"realPlink": True, "loopbackOnly": True,
-                      "powerCommandsExecuted": False, "cases": results}, indent=2))
+                      "powerCommandsExecuted": False, "changingHostKeysAccepted": True,
+                      "hostKeysNotPersisted": True, "cases": results}, indent=2))
 
 
 if __name__ == "__main__":
