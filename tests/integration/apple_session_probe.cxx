@@ -22,7 +22,7 @@ public:
   ConnectionCredentials credentials;
   bool gotFrame = false;
   bool gotPixels = false;
-  Probe() { supportsDesktopResize = true; }
+  Probe() { supportsDesktopResize = true; setShared(true); }
   void getUserPasswd(std::string* user, std::string* password) override {
     if (user) *user = credentials.username;
     *password = credentials.password;
