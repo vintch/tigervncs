@@ -27,6 +27,11 @@ target_link_libraries(portableconfig PRIVATE core GTest::gtest_main jsoncpp_stat
 gtest_discover_tests(portableconfig)
 
 if(WIN32)
+  add_executable(shelly_power_probe EXCLUDE_FROM_ALL ../integration/shelly_power_probe.cxx
+    ../../vncviewer/ShellyPower.cxx ../../vncviewer/ConnectionStore.cxx
+    ../../vncviewer/VpnProfiles.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)
+  target_include_directories(shelly_power_probe SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
+  target_link_libraries(shelly_power_probe PRIVATE network core jsoncpp_static ${FLTK_LIBRARIES} bcrypt crypt32 winhttp)
   add_executable(apple_session_probe EXCLUDE_FROM_ALL ../integration/apple_session_probe.cxx
     ../../vncviewer/ConnectionStore.cxx
     ../../vncviewer/VpnProfiles.cxx ../../vncviewer/CredentialVault.cxx ../../vncviewer/PortableConfig.cxx)
@@ -61,7 +66,8 @@ if(WIN32)
     target_link_options(plink_stub PRIVATE -municode)
     target_link_options(vpn_cli_stub PRIVATE -municode)
   endif()
-  add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx presence.cxx sessionliveness.cxx networksettings.cxx powertools.cxx vpncontrol.cxx
+  add_executable(connectionstore connectionstore.cxx connectiontimeout.cxx presence.cxx sessionliveness.cxx networksettings.cxx powertools.cxx vpncontrol.cxx shellypower.cxx
+    ../../vncviewer/ShellyPower.cxx
     ../../vncviewer/NetworkSettings.cxx ../../vncviewer/PowerTools.cxx ../../vncviewer/VpnControl.cxx ../../vncviewer/VpnElevation.cxx
     ../../vncviewer/PresenceMonitor.cxx ../../vncviewer/ConnectionStore.cxx
     ../../vncviewer/VpnProfiles.cxx
@@ -69,7 +75,7 @@ if(WIN32)
     ../../vncviewer/ConnectionTree.cxx)
   target_include_directories(connectionstore SYSTEM PRIVATE ${FLTK_INCLUDE_DIR})
   target_link_libraries(connectionstore PRIVATE network core GTest::gtest_main jsoncpp_static
-    ${FLTK_LIBRARIES} bcrypt crypt32 iphlpapi)
+    ${FLTK_LIBRARIES} bcrypt crypt32 iphlpapi winhttp)
   add_dependencies(connectionstore plink_stub vpn_cli_stub)
   gtest_discover_tests(connectionstore)
   add_executable(scaled_surface scaled_surface.cxx

@@ -25,7 +25,7 @@ parents, cycles, password replacement/removal and metadata preservation are
 covered by the automated store tests.
 
 The stub is compiled only into the explicit test target. Production
-`dist/vncviewer.exe` uses the normal VNC connection path. Do not distribute the
+`dist/TigerVNCs.exe` uses the normal VNC connection path. Do not distribute the
 test executable or include test credentials/configurations in Git.
 
 For connection recovery, explicitly build `vncviewer_lifecycle_test` and run
@@ -60,3 +60,18 @@ reachable Mac and require sessionGranted=true and framebufferDecoded=true.
 The GUI stub also accepts VNC_TEST_SESSION_MODE (current-screen/user-session)
 and records sessionModeMatches. Use synthetic credentials to verify both the
 saved editor preference and context-menu overrides without contacting a Mac.
+
+For Shelly HTTP integration, build `shelly_power_probe` explicitly and run
+`python tests/integration/shelly_http_test.py <path-to-probe>`. Loopback mock
+plugs verify Basic and SHA-256 Digest authentication, the device-side backup
+timer, cancellation, failed commands, and blocked redirects. Passwords are
+supplied through standard input and saved encrypted in temporary fixtures.
+No real plugs are contacted by this script.
+
+Interactive checks use an isolated viewer and JSON under `build/`. Verify
+Power On is disabled for None, and works independently of SSH availability.
+For Shelly Plug, check IP/login/password fields, password retention after
+editing, the Tools delay preference, both confirmations for a cached green
+computer, and Cancel restoring power while the main window stays blocked.
+Live outlet control requires explicit authorization. Shut down an online Mac
+through SSH before cutting its outlet. Always leave the plug switched on.
