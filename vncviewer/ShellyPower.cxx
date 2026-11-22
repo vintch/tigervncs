@@ -35,7 +35,7 @@ Credentials credentials(const Json::Value& document, const std::string& id) {
 }
 Address parseAddress(const std::string& value) {
   if (value.empty() || value.size() > 256 || value.find_first_of("/\\@?# \r\n\t") != std::string::npos || value.find('\0') != std::string::npos)
-    throw std::runtime_error("Enter a valid Shelly Plug IP address");
+    throw std::runtime_error("Enter a valid Shelly Plug address");
   Address parsed; std::string port; bool explicitPort = false;
   if (value[0] == '[') {
     auto end = value.find(']'); if (end == std::string::npos) throw std::runtime_error("Invalid Shelly Plug IP address");
@@ -52,8 +52,10 @@ Address parseAddress(const std::string& value) {
   } else if (explicitPort) throw std::runtime_error("Invalid Shelly Plug port");
 #ifdef WIN32
   network::initSockets(); in_addr v4; in6_addr v6;
-  if (InetPtonA(AF_INET, parsed.host.c_str(), &v4) != 1 && InetPtonA(AF_INET6, parsed.host.c_str(), &v6) != 1)
-    throw std::runtime_error("Enter an IP address, not a URL or hostname");
+  if (InetPtonA(AF_INET, parsed.host.c_str(), &v4) != 1 && InetPtonA(AF_INET6, parsed.host.c_str(), &v6) != 1) {
+    if (parsed.host.empty() || parsed.host.size() > 253 || !std::all_of(parsed.host.begin(), parsed.host.end(), [](unsigned char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-'; }))
+      throw std::runtime_error("Enter an IP address or hostname, not a URL");
+  }
 #endif
   return parsed;
 }
@@ -99,6 +101,7 @@ std::map<std::string,std::string> challengeFields(const std::string& text) {
       if (at == text.size()) throw std::runtime_error("Invalid authentication challenge");
       ++at;
     } else { auto end = text.find(',', at); value = text.substr(at, end == std::string::npos ? end : end - at); at = end; }
+    while (!value.empty() && (value.back() == ' ' || value.back() == '\t' || value.back() == '\r' || value.back() == '\n')) value.pop_back();
     values[name] = value;
   }
   return values;
@@ -134,8 +137,9 @@ public:
       Internet connection; connection.value = WinHttpConnect(session.value, core::utf8ToUTF16(address.host.c_str()).c_str(), address.port, 0);
       if (!connection.value) return false;
       std::string auth; Wipe wipeAuth{auth};
-      auto deadline = clockMs() + 6000;
-      for (int attempt = 0; attempt < 3; ++attempt) {
+      bool gen2 = false;
+      auto deadline = clockMs() + 10000;
+      for (int attempt = 0; attempt < 5; ++attempt) {
         if (clockMs() >= deadline) return false;
         Internet request; request.value = WinHttpOpenRequest(connection.value, L"GET", core::utf8ToUTF16(uri.c_str()).c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
         DWORD redirects = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
@@ -154,6 +158,11 @@ public:
           if (!WinHttpQueryHeaders(request.value, WINHTTP_QUERY_WWW_AUTHENTICATE, WINHTTP_HEADER_NAME_BY_INDEX, challenge.data(), &size, WINHTTP_NO_HEADER_INDEX)) return false;
           CredentialVault::erase(auth); auth = authorization(core::utf16ToUTF8(challenge.data()), credentials, uri); continue;
         }
+        if ((status == 404 || status == 400) && !gen2) {
+          gen2 = true; CredentialVault::erase(auth);
+          uri = std::string("/rpc/Switch.Set?id=0&on=") + (on ? "true" : "false&toggle_after=" + std::to_string(flipBackSeconds));
+          continue;
+        }
         if (status != 200) return false;
         std::string text; char buffer[4096]; DWORD count;
         do {
@@ -163,7 +172,9 @@ public:
         } while (count);
         Json::CharReaderBuilder builder; builder["failIfExtra"] = true;
         std::unique_ptr<Json::CharReader> reader(builder.newCharReader()); Json::Value value; std::string error;
-        return reader->parse(text.data(), text.data()+text.size(), &value, &error) && value.isObject() &&
+        if (!reader->parse(text.data(), text.data()+text.size(), &value, &error) || !value.isObject()) return false;
+        if (gen2) return value["was_on"].isBool() && !value.isMember("error") && !value.isMember("code");
+        return
           value["ison"].isBool() && value["ison"].asBool() == on &&
           (on || (value["has_timer"].isBool() && value["has_timer"].asBool()));
       }

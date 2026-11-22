@@ -468,6 +468,14 @@ void CConn::checkSession(core::Timer*)
   if (!sock || state() != RFBSTATE_NORMAL) return;
   try {
     auto now = pingClockMs();
+    if (startupRefreshAt && now >= startupRefreshAt) {
+      startupRefreshAt = 0;
+      // Apple Screen Sharing can acknowledge the initial request before its
+      // screen capture is ready. Ask for a complete image once it has settled.
+      vlog.info("Requesting a complete startup framebuffer refresh");
+      refreshFramebuffer();
+      getOutStream()->cork(false);
+    }
     liveness.progress(now, sock->inStream().pos() + sock->inStream().avail());
     auto action = liveness.check(now);
     if (action == SessionLiveness::Reconnect) {
@@ -478,7 +486,8 @@ void CConn::checkSession(core::Timer*)
     if (action == SessionLiveness::Probe) {
       // An incremental request may legitimately wait on an unchanged desktop.
       // A non-incremental one-pixel RFB request always has an answer; no ICMP.
-      writer()->writeFramebufferUpdateRequest({0, 0, 1, 1}, false);
+      if (!reportedFirstFrame) refreshFramebuffer();
+      else writer()->writeFramebufferUpdateRequest({0, 0, 1, 1}, false);
       getOutStream()->cork(false);
     }
     sessionTimer.repeat(250);
@@ -613,6 +622,7 @@ void CConn::initDone()
   liveness.start(pingClockMs(), sock->inStream().pos() + sock->inStream().avail());
   liveness.configure(networkSettings::sessionTimeoutMs());
   sessionTimer.start(250);
+  startupRefreshAt = pingClockMs() + 1000;
 
   // Force a switch to the format and encoding we'd like
   updateEncoding();

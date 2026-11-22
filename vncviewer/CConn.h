@@ -127,6 +127,7 @@ private:
   ConnectionCredentials recoveryCredentials;
   bool recovering = false, fastClose = false, freshPixels = false;
   bool reportedFirstFrame = false;
+  int64_t startupRefreshAt = 0;
 
   DesktopWindow *desktop;
 

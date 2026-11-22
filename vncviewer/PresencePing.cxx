@@ -66,8 +66,26 @@ bool resolve(const std::string& host, sockaddr_storage& result, int timeoutMs) {
   hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
   ADDRINFOEXW* addresses = nullptr;
   timeval timeout{timeoutMs / 1000, (timeoutMs % 1000) * 1000};
+  EventHandle event;
+  if (!event.value) return false;
+  OVERLAPPED overlapped{}; overlapped.hEvent = event.value;
+  HANDLE cancellation = nullptr;
+  auto module = GetModuleHandleW(L"ws2_32.dll");
+  auto cancel = reinterpret_cast<INT (WSAAPI*)(LPHANDLE)>(GetProcAddress(module,"GetAddrInfoExCancel"));
+  auto resultStatus = reinterpret_cast<INT (WSAAPI*)(LPOVERLAPPED)>(GetProcAddress(module,"GetAddrInfoExOverlappedResult"));
+  bool asynchronous = cancel && resultStatus;
   int status = GetAddrInfoExW(name.data(), nullptr, NS_DNS, nullptr, &hints,
-                              &addresses, &timeout, nullptr, nullptr, nullptr);
+                              &addresses, asynchronous ? &timeout : nullptr, asynchronous ? &overlapped : nullptr, nullptr, asynchronous ? &cancellation : nullptr);
+  if (status == WSA_IO_PENDING) {
+    if (WaitForSingleObject(event.value, timeoutMs) != WAIT_OBJECT_0) {
+      cancel(&cancellation);
+      // Cancellation is asynchronous; keep result/OVERLAPPED storage alive.
+      WaitForSingleObject(event.value, INFINITE);
+      if (addresses) FreeAddrInfoExW(addresses);
+      return false;
+    }
+    status = resultStatus(&overlapped);
+  }
   std::unique_ptr<ADDRINFOEXW, decltype(&FreeAddrInfoExW)> owner(addresses, FreeAddrInfoExW);
   if (status != 0) return false;
   // Exactly one address and one echo per attempt; never ping every DNS result.

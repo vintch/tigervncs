@@ -62,7 +62,8 @@ Features added in this fork
   Power Off and Force Reboot through PuTTY plink, with confirmation and a
   hidden background invocation using the computer's saved credentials.
   These commands require plink, SSH access and suitable administrator rights.
-* **Shelly Plug Power On.** Configure a plug IP address and separate login
+* **Shelly Plug Power On.** Supports original plugs and Plus Plug S v2 (Gen2).
+  Configure a plug IP address or hostname and separate login
   credentials, then cycle its outlet through Tools / Power On. The delay
   defaults to 15 seconds and is configurable in Options / Tools. A modal
   progress window includes Cancel, which requests immediate restoration.

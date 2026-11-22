@@ -41,3 +41,14 @@ API references:
 The Mac must be configured to start when power returns. Shut down a running
 computer before using a power cycle; the green warning is informational and
 does not shut it down automatically.
+
+## Plus Plug S v2 and hostnames
+
+Plug addresses accept IP addresses or DNS names, optionally with a port. Plus
+Plug S v2 (Gen2) uses Switch.Set RPC when legacy relay commands are rejected.
+The off command includes toggle_after as a device-side restoration timer.
+The on command omits the optional timer because older firmware rejects zero.
+HTTP Digest SHA-256 authentication uses username admin and the device password;
+whitespace in authentication challenges is accepted. Redirects remain blocked.
+
+Reference: https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/Switch/
