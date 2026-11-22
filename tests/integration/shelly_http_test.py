@@ -27,20 +27,24 @@ class Plug(http.server.BaseHTTPRequestHandler):
         self.close_connection = True
         authorization = self.headers.get("Authorization", "")
         valid = authorization == "Basic " + base64.b64encode(("admin:" + password).encode()).decode()
-        if self.mode == "digest" and authorization.startswith("Digest "):
+        if self.mode in ("digest", "gen2", "gen2-compat") and authorization.startswith("Digest "):
             fields = urllib.request.parse_keqv_list(urllib.request.parse_http_list(authorization[7:]))
             digest = lambda value: hashlib.sha256(value.encode()).hexdigest()
             expected = digest(digest("admin:test:" + password) + ":testnonce:00000001:" + fields.get("cnonce", "") + ":auth:" + digest("GET:" + self.path))
             valid = fields.get("response") == expected and fields.get("uri") == self.path
         if not valid:
             self.send_response(401)
-            self.send_header("WWW-Authenticate", 'Digest realm="test", nonce="testnonce", algorithm=SHA-256, qop="auth"' if self.mode == "digest" else 'Basic realm="test"')
+            self.send_header("WWW-Authenticate", 'Digest realm="test", nonce="testnonce", qop="auth", algorithm=SHA-256 ' if self.mode in ("digest", "gen2", "gen2-compat") else 'Basic realm="test"')
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if self.path.startswith("/relay/") and self.mode in ("gen2", "gen2-compat"):
+            self.send_response(400 if self.mode == "gen2-compat" else 404); self.send_header("Content-Length", "0"); self.end_headers(); return
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        if self.path.startswith("/rpc/Switch.Set"):
+            query = {"turn": ["on" if query["on"] == ["true"] else "off"], "timer": query.get("toggle_after", ["0"])}
         self.calls.append((query["turn"][0], query["timer"][0]))
-        body = json.dumps({"ison": query["turn"] == ["on"], "has_timer": query["turn"] == ["off"] and self.mode != "no-timer"}).encode()
+        body = json.dumps({"was_on": False} if self.mode in ("gen2", "gen2-compat") else {"ison": query["turn"] == ["on"], "has_timer": query["turn"] == ["off"] and self.mode != "no-timer"}).encode()
         self.send_response(302 if self.mode == "redirect" else 500 if self.mode == "error" else 200)
         if self.mode == "redirect":
             self.send_header("Location", "/must-not-follow")
@@ -56,7 +60,7 @@ try:
         config = str(pathlib.Path(directory) / "tigervncs.json")
         subprocess.run([str(probe), "seed", config, f"127.0.0.1:{server.server_port}", "admin"], input=password + "\n", text=True, check=True, capture_output=True)
         assert password not in pathlib.Path(config).read_text()
-        for mode, delay, cancel in [("basic", 1, -1), ("digest", 15, 100)]:
+        for mode, delay, cancel in [("basic", 1, -1), ("digest", 15, 100), ("gen2", 1, -1), ("gen2-compat", 15, 100)]:
             Plug.mode, Plug.calls = mode, []
             result = subprocess.run([str(probe), "cycle", config, str(delay), str(cancel)], text=True, capture_output=True, timeout=20)
             assert result.returncode == 0, (mode, result.stdout, result.stderr)

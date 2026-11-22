@@ -47,6 +47,8 @@ def serve_connection(conn, mode, color, metrics):
             receive(conn, count * 4)
         elif kind == 3:
             incremental, x, y, width, height = struct.unpack("!BHHHH", receive(conn, 9))
+            if not incremental and width == 64 and height == 48:
+                metrics.append({"event": "full-request", "time": time.monotonic()})
             if first:
                 if mode == "delayed":
                     time.sleep(1.1)
@@ -166,6 +168,8 @@ def run_case(executable, mode):
             assert 4000 <= delay <= 6500, events
     else:
         assert len(frames) == 1 and not frozen, events
+        if mode == "idle":
+            assert sum(e["event"] == "full-request" for e in metrics) >= 2, metrics
     return {"scenario": mode, "passed": True, "events": events}
 
 

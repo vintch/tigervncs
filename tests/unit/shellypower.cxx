@@ -22,11 +22,13 @@ bool wait(const std::shared_ptr<shellyPower::Cycle>& cycle, shellyPower::Phase p
 }
 }
 TEST(ShellyPower, AddressValidation) {
+  EXPECT_EQ(shellyPower::parseAddress("shellyplug-sprechzimmer4.ha.local").host,"shellyplug-sprechzimmer4.ha.local");
+  EXPECT_EQ(shellyPower::parseAddress("localhost:1234").port,1234);
   EXPECT_EQ(shellyPower::parseAddress("10.3.192.12").port,80);
   EXPECT_EQ(shellyPower::parseAddress("127.0.0.1:12345").port,12345);
   EXPECT_EQ(shellyPower::parseAddress("[::1]:8080").host,"::1");
   EXPECT_EQ(shellyPower::parseAddress("2001:db8::").host,"2001:db8::");
-  for (auto value : {"", "http://10.0.0.1", "10.0.0.1/path", "admin@10.0.0.1", "localhost", "10.0.0.1:0", "10.0.0.1:65536", "10.0.0.1:", "10.0.0.1\r\nHeader:x"})
+  for (auto value : {"", "http://10.0.0.1", "10.0.0.1/path", "admin@10.0.0.1", "10.0.0.1:0", "10.0.0.1:65536", "10.0.0.1:", "10.0.0.1\r\nHeader:x"})
     EXPECT_THROW(shellyPower::parseAddress(value), std::runtime_error) << value;
 }
 TEST(ShellyPower, FullCycleUsesBackupTimerAndRestores) {
