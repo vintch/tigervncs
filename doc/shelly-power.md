@@ -52,3 +52,9 @@ HTTP Digest SHA-256 authentication uses username admin and the device password;
 whitespace in authentication challenges is accepted. Redirects remain blocked.
 
 Reference: https://shelly-api-docs.shelly.cloud/gen2/ComponentsAndServices/Switch/
+
+Select **Shelly Plug Gen 2** for direct Gen2 RPC. Its login field is disabled;
+the API username is always admin. **Check** next to the address uses the current
+editor values and reads relay status (Gen1) or Switch.GetStatus (Gen2), without
+switching power. A blank password reuses the saved encrypted password when editing.
+Unsaved changes are not written by Check.

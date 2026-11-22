@@ -76,6 +76,8 @@ private:
   void editEntry(bool folder, bool existing);
   void closeEditor();
   void layoutPowerOnEditor();
+  static void checkShelly(Fl_Widget*, void*);
+  Fl_Button* entryShellyCheck;
   static void powerOnModeChanged(Fl_Widget*, void*);
   void runPowerOn();
   static void connectionTypeChanged(Fl_Widget*, void*);

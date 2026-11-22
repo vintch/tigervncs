@@ -81,14 +81,14 @@ void validate(Json::Value& document) {
     connectionProtocol::type(connection);
     const auto& power = connection["powerOn"];
     if (!power.isNull()) {
-      if (!power.isObject() || (power["mode"] != "none" && power["mode"] != "shelly-plug"))
+      if (!power.isObject() || (power["mode"] != "none" && power["mode"] != "shelly-plug" && power["mode"] != "shelly-plug-gen2"))
         throw std::runtime_error("Invalid Power On mode");
       for (const char* field : {"address", "username"}) {
         if (!power[field].isNull() && !power[field].isString()) throw std::runtime_error("Invalid Shelly Plug settings");
         if (power[field].isString()) text(power[field].asString(), field, 1024, true);
       }
-      if (power["mode"] == "shelly-plug" && (!power["address"].isString() || trim(power["address"].asString()).empty() || !power["username"].isString()))
-        throw std::runtime_error("Enter the Shelly Plug IP address and login");
+      if ((power["mode"] == "shelly-plug" || power["mode"] == "shelly-plug-gen2") && (!power["address"].isString() || trim(power["address"].asString()).empty() || !power["username"].isString()))
+        throw std::runtime_error("Enter the Shelly Plug address");
       if (!power["password"].isNull() && !power["password"].isObject()) throw std::runtime_error("Invalid saved Shelly Plug password");
     }
     auto id = connection["id"].asString();

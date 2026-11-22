@@ -18,6 +18,8 @@
 #include <FL/fl_ask.H>
 #include <algorithm>
 #include <functional>
+#include <thread>
+#include <FL/Fl_Box.H>
 
 namespace {
 // FLTK's stable 1.3 ABI does not emit a callback when a selected item is
@@ -77,9 +79,11 @@ void ServerDialog::createManager(int top)
   vpnProfile = new Fl_Choice(230, y, 200, 25); y += 32;
   vpnProfile->tooltip("VPN profile");
   entryPowerOn = new Fl_Choice(112, y, 318, 25, "Power On:"); y += 30;
-  entryPowerOn->add("None"); entryPowerOn->add("Shelly Plug"); entryPowerOn->value(0);
+  entryPowerOn->add("None"); entryPowerOn->add("Shelly Plug"); entryPowerOn->add("Shelly Plug Gen 2"); entryPowerOn->value(0);
   entryPowerOn->callback(powerOnModeChanged, this);
-  entryShellyAddress = new Fl_Input(112, y, 318, 25, "Plug IP:"); y += 30;
+  entryShellyAddress = new Fl_Input(112, y, 240, 25, "Plug address:");
+  entryShellyCheck = new Fl_Button(360, y, 70, 25, "Check");
+  entryShellyCheck->callback(checkShelly, this); y += 30;
   entryShellyUser = new Fl_Input(112, y, 318, 25, "Plug login:"); y += 30;
   entryShellyPassword = new Fl_Secret_Input(112, y, 318, 25, "Plug password:"); y += 30;
   entryShellyPassword->tooltip("Leave blank to keep the saved Shelly Plug password.");
@@ -193,7 +197,7 @@ void ServerDialog::editEntry(bool folder, bool existing)
   entryUser->value(existing && !folder ? record["username"].asCString() : "");
   entryPassword->value("");
   const auto& power = record["powerOn"];
-  entryPowerOn->value(power.isObject() && power["mode"] == "shelly-plug" ? 1 : 0);
+  entryPowerOn->value(power.isObject() && power["mode"] == "shelly-plug-gen2" ? 2 : power["mode"] == "shelly-plug" ? 1 : 0);
   entryShellyAddress->value(power.isObject() && power["address"].isString() ? power["address"].asCString() : "");
   entryShellyUser->value(power.isObject() && power["username"].isString() ? power["username"].asCString() : "");
   entryShellyPassword->value("");
@@ -285,12 +289,12 @@ void ServerDialog::performManagerAction(const std::string& action)
         if (!d->rememberPassword->value()) change = ConnectionStore::ForgetPassword;
         else if (d->entryPassword->size() || d->editingId.empty() ||
                  d->store.connection(d->editingId)["password"].isNull()) change = ConnectionStore::SetPassword;
-        Json::Value powerOn; powerOn["mode"] = d->entryPowerOn->value() == 1 ? "shelly-plug" : "none";
+        Json::Value powerOn; powerOn["mode"] = d->entryPowerOn->value() == 2 ? "shelly-plug-gen2" : d->entryPowerOn->value() != 0 ? "shelly-plug" : "none";
         powerOn["address"] = d->entryShellyAddress->value(); powerOn["username"] = d->entryShellyUser->value();
-        if (d->entryPowerOn->value() == 1) shellyPower::parseAddress(d->entryShellyAddress->value());
+        if (d->entryPowerOn->value() != 0) shellyPower::parseAddress(d->entryShellyAddress->value());
         std::string password = d->entryPassword->value(), plugPassword = d->entryShellyPassword->value();
         auto plugChange = ConnectionStore::KeepPassword;
-        if (!plugPassword.empty() || (d->entryPowerOn->value() == 1 &&
+        if (!plugPassword.empty() || (d->entryPowerOn->value() != 0 &&
             (d->editingId.empty() || d->store.connection(d->editingId)["powerOn"]["password"].isNull()))) plugChange = ConnectionStore::SetPassword;
         Json::Value vpn(Json::objectValue);
         vpn["enabled"] = bool(d->associateVpn->value());
@@ -517,9 +521,10 @@ void ServerDialog::updateConnectionType() {
   entryAddress->tooltip(rdp ? "RDP hostname or IP address, optionally followed by :port (default 3389)." : "VNC server address: host, host:display or host::port.");
 }
 void ServerDialog::layoutPowerOnEditor() {
-  bool details = !editingFolder && entryPowerOn->value() == 1;
-  for (Fl_Widget* widget : std::vector<Fl_Widget*>{entryShellyAddress, entryShellyUser, entryShellyPassword})
+  bool details = !editingFolder && entryPowerOn->value() != 0;
+  for (Fl_Widget* widget : std::vector<Fl_Widget*>{entryShellyAddress, entryShellyUser, entryShellyPassword, entryShellyCheck})
     if (details) widget->show(); else widget->hide();
+  if (entryPowerOn->value() == 2) entryShellyUser->deactivate(); else entryShellyUser->activate();
   int extra = editingFolder ? 0 : 30 + (details ? 90 : 0);
   int buttonsY = entryPowerOn->y() + extra;
   saveEntryButton->position(198, buttonsY); cancelEntryButton->position(318, buttonsY);
@@ -541,4 +546,34 @@ void ServerDialog::runPowerOn() {
     auto credentials = shellyPower::credentials(document, id);
     runShellyDialog(credentials, int(shellyPower::delaySeconds), computer["name"].asString());
   } catch (...) { fl_message("Unable to use the Shelly Plug settings or send the power command."); }
+}
+
+void ServerDialog::checkShelly(Fl_Widget*, void* data) {
+  auto d = static_cast<ServerDialog*>(data);
+  try {
+    shellyPower::Credentials credentials;
+    credentials.address = d->entryShellyAddress->value();
+    shellyPower::parseAddress(credentials.address);
+    credentials.gen2 = d->entryPowerOn->value() == 2;
+    credentials.username = credentials.gen2 ? "admin" : d->entryShellyUser->value();
+    credentials.password = d->entryShellyPassword->value();
+    if (credentials.password.empty() && !d->editingId.empty()) {
+      auto document = d->store.read();
+      auto computer = d->store.connection(d->editingId);
+      if (!computer["powerOn"]["password"].isNull())
+        credentials.password = CredentialVault::decrypt(document, d->editingId + "::shelly", computer["powerOn"]["password"]);
+    }
+    std::atomic<bool> done{false}; bool success = false;
+    Fl_Window window(330, 90, "Check Shelly Plug");
+    Fl_Box message(15, 15, 300, 55, "Checking connection and authentication...");
+    window.end(); window.set_modal(); window.callback([](Fl_Widget*, void*) {});
+    std::thread worker([&]() {
+      try { success = shellyPower::transport()->check(credentials); } catch (...) {}
+      done.store(true, std::memory_order_release);
+    });
+    window.show();
+    while (!done.load(std::memory_order_acquire)) Fl::wait(0.05);
+    worker.join(); window.hide();
+    fl_message("%s", success ? "Shelly Plug connection, authentication and API check succeeded." : "Shelly Plug check failed. Check the address, generation and credentials.");
+  } catch (...) { fl_message("Unable to check the Shelly Plug settings."); }
 }

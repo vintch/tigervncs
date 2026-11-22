@@ -21,13 +21,14 @@ namespace shellyPower {
 core::IntParameter delaySeconds("ShellyPlugDelaySeconds", "Delay between switching a Shelly Plug off and on, in seconds", 15, 1, 3600);
 Credentials::~Credentials() { CredentialVault::erase(password); }
 bool configured(const Json::Value& computer) {
-  return computer.isObject() && computer["powerOn"].isObject() && computer["powerOn"]["mode"] == "shelly-plug";
+  return computer.isObject() && computer["powerOn"].isObject() && (computer["powerOn"]["mode"] == "shelly-plug" || computer["powerOn"]["mode"] == "shelly-plug-gen2");
 }
 Credentials credentials(const Json::Value& document, const std::string& id) {
   for (const auto& computer : document["connections"]) if (computer["id"] == id) {
     if (!configured(computer)) throw std::runtime_error("Power On is not configured");
     const auto& plug = computer["powerOn"]; Credentials value;
-    value.address = plug["address"].asString(); value.username = plug["username"].asString();
+    value.gen2 = plug["mode"] == "shelly-plug-gen2";
+    value.address = plug["address"].asString(); value.username = value.gen2 ? "admin" : plug["username"].asString();
     if (!plug["password"].isNull()) value.password = CredentialVault::decrypt(document, id + "::shelly", plug["password"]);
     parseAddress(value.address); return value;
   }
@@ -127,7 +128,10 @@ std::string authorization(const std::string& challenge, const Credentials& crede
 }
 class NativeTransport : public Transport {
 public:
-  bool setPower(const Credentials& credentials, bool on, int flipBackSeconds) override {
+  bool check(const Credentials& credentials) override { return perform(credentials, true, 0, true); }
+  bool setPower(const Credentials& credentials, bool on, int flipBackSeconds) override { return perform(credentials, on, flipBackSeconds, false); }
+private:
+  bool perform(const Credentials& credentials, bool on, int flipBackSeconds, bool checking) {
     try {
       auto address = parseAddress(credentials.address);
       if (credentials.username.size() > 1024 || credentials.password.size() > 4096) return false;
@@ -137,7 +141,10 @@ public:
       Internet connection; connection.value = WinHttpConnect(session.value, core::utf8ToUTF16(address.host.c_str()).c_str(), address.port, 0);
       if (!connection.value) return false;
       std::string auth; Wipe wipeAuth{auth};
-      bool gen2 = false;
+      bool gen2 = credentials.gen2;
+      auto rpcUri = [&]() { return checking ? std::string("/rpc/Switch.GetStatus?id=0") : std::string("/rpc/Switch.Set?id=0&on=") + (on ? "true" : "false&toggle_after=" + std::to_string(flipBackSeconds)); };
+      if (checking) uri = "/relay/0";
+      if (gen2) uri = rpcUri();
       auto deadline = clockMs() + 10000;
       for (int attempt = 0; attempt < 5; ++attempt) {
         if (clockMs() >= deadline) return false;
@@ -160,7 +167,7 @@ public:
         }
         if ((status == 404 || status == 400) && !gen2) {
           gen2 = true; CredentialVault::erase(auth);
-          uri = std::string("/rpc/Switch.Set?id=0&on=") + (on ? "true" : "false&toggle_after=" + std::to_string(flipBackSeconds));
+          uri = rpcUri();
           continue;
         }
         if (status != 200) return false;
@@ -173,6 +180,7 @@ public:
         Json::CharReaderBuilder builder; builder["failIfExtra"] = true;
         std::unique_ptr<Json::CharReader> reader(builder.newCharReader()); Json::Value value; std::string error;
         if (!reader->parse(text.data(), text.data()+text.size(), &value, &error) || !value.isObject()) return false;
+        if (checking) return gen2 ? value["output"].isBool() && value["id"] == 0 : value["ison"].isBool();
         if (gen2) return value["was_on"].isBool() && !value.isMember("error") && !value.isMember("code");
         return
           value["ison"].isBool() && value["ison"].asBool() == on &&

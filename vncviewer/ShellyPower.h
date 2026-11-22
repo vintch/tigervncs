@@ -10,7 +10,7 @@
 #include <string>
 namespace shellyPower {
 extern core::IntParameter delaySeconds;
-struct Credentials { std::string address, username, password; ~Credentials(); };
+struct Credentials { std::string address, username, password; bool gen2 = false; ~Credentials(); };
 bool configured(const Json::Value& computer);
 Credentials credentials(const Json::Value& document, const std::string& id);
 struct Address { std::string host; unsigned short port = 80; };
@@ -18,6 +18,7 @@ Address parseAddress(const std::string& value);
 class Transport {
 public:
   virtual ~Transport() {}
+  virtual bool check(const Credentials&) { return false; }
   virtual bool setPower(const Credentials&, bool on, int flipBackSeconds) = 0;
 };
 std::shared_ptr<Transport> transport();
