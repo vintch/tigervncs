@@ -19,6 +19,7 @@ int main(int argc,char** argv) {
     }
     auto doc=store.read(); auto id=doc["connections"][0]["id"].asString();
     auto credentials=shellyPower::credentials(doc,id);
+    if (std::string(argv[1])=="check") return shellyPower::transport()->check(credentials)?0:1;
     if (std::string(argv[1])=="on") return shellyPower::transport()->setPower(credentials,true,0)?0:1;
     if (std::string(argv[1])!="cycle" || argc!=5) return 2;
     auto started=shellyPower::clockMs(); auto cycle=shellyPower::start(credentials,std::stoi(argv[3]),shellyPower::transport());

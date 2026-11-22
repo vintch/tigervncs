@@ -98,3 +98,18 @@ TEST(ShellyPower, SeparateEncryptedPasswordSurvivesEditsAndDisabling) {
   EXPECT_THROW(store.saveConnection(id,"Broken","10.3.1.13","Administrator","",ConnectionStore::KeepPassword,"","",{},power),std::runtime_error);
   EXPECT_EQ(store.connection(id)["name"],"Renamed"); std::remove(path);
 }
+
+TEST(ShellyPower, Gen2UsesFixedApiUsernameAndKeepsEncryptedPassword) {
+  const char* path="shelly-gen2-settings-test.json"; std::remove(path);
+  {
+    ConnectionStore store(path);
+    Json::Value power; power["mode"]="shelly-plug-gen2"; power["address"]="plug.example.local"; power["username"]="ignored";
+    auto id=store.saveConnection("","Computer","host","","",ConnectionStore::KeepPassword,"","current-screen",{},power,ConnectionStore::SetPassword,"synthetic-secret");
+    auto document=store.read();
+    auto credentials=shellyPower::credentials(document,id);
+    EXPECT_TRUE(credentials.gen2); EXPECT_EQ(credentials.username,"admin");
+    EXPECT_EQ(credentials.password,"synthetic-secret");
+    EXPECT_TRUE(shellyPower::configured(store.connection(id)));
+  }
+  std::remove(path);
+}

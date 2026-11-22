@@ -23,6 +23,10 @@ class Plug(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def end_headers(self):
+        self.send_header("Connection", "close")
+        super().end_headers()
+
     def do_GET(self):
         self.close_connection = True
         authorization = self.headers.get("Authorization", "")
@@ -40,6 +44,9 @@ class Plug(http.server.BaseHTTPRequestHandler):
             return
         if self.path.startswith("/relay/") and self.mode in ("gen2", "gen2-compat"):
             self.send_response(400 if self.mode == "gen2-compat" else 404); self.send_header("Content-Length", "0"); self.end_headers(); return
+        if self.path in ("/relay/0", "/rpc/Switch.GetStatus?id=0"):
+            body = json.dumps({"output": True, "id": 0} if self.path.startswith("/rpc/") else {"ison": True}).encode()
+            self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         if self.path.startswith("/rpc/Switch.Set"):
             query = {"turn": ["on" if query["on"] == ["true"] else "off"], "timer": query.get("toggle_after", ["0"])}
@@ -66,6 +73,16 @@ try:
             assert result.returncode == 0, (mode, result.stdout, result.stderr)
             assert Plug.calls == [("off", str(delay)), ("on", "0")], Plug.calls
             print(mode + ": " + result.stdout.strip())
+        for mode, generation in [("basic", "shelly-plug"), ("digest", "shelly-plug"), ("gen2", "shelly-plug-gen2")]:
+            Plug.mode, Plug.calls = mode, []
+            doc = json.loads(pathlib.Path(config).read_text())
+            doc["connections"][0]["powerOn"]["mode"] = generation
+            pathlib.Path(config).write_text(json.dumps(doc))
+            result = subprocess.run([str(probe), "check", config], capture_output=True, text=True, timeout=15)
+            assert result.returncode == 0 and not Plug.calls, (mode, result.stdout, result.stderr)
+            print(mode + ": read-only check passed without power commands")
+        doc["connections"][0]["powerOn"]["mode"] = "shelly-plug"
+        pathlib.Path(config).write_text(json.dumps(doc))
         for mode in ["error", "redirect", "no-timer"]:
             Plug.mode, Plug.calls = mode, []
             result = subprocess.run([str(probe), "cycle", config, "15", "-1"], text=True, capture_output=True, timeout=20)
