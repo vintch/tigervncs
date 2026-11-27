@@ -396,3 +396,24 @@ The temporary credential target remains TERMSRV/<host>: mstsc looks up its
 credentials using that service prefix. TIGERVNCSSRV is not a configurable
 replacement for the system client's lookup.
 Reference: https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-admx-credssp
+
+Unlock FileVault
+---------------
+Tools / Unlock FileVault authenticates over SSH with the selected computer's
+saved credentials using plink, without requesting a shell or running commands.
+It uses the existing configured plink path and temporary host-key handling.
+Apple silicon and macOS 26 or later, Remote Login enabled before restart,
+preboot network availability and a user allowed to unlock FileVault are required.
+Apple documents a brief SSH disconnect after successful unlock while services
+start. Success requires authentication followed by remote disconnect/normal
+connection completion. A drop before authentication, authentication failure,
+DNS/connect failure or timeout is an error. If an already unlocked Mac keeps
+SSH open, the action times out and reports that unlock was not confirmed.
+The operation runs in the background; ping status does not gate the menu.
+References:
+https://support.apple.com/guide/security/sec8447f5049/web
+https://github.com/apple-oss-distributions/OpenSSH/blob/main/apple_ssh_and_filevault.7
+
+OpenVPN Connect windows belonging to the configured executable are minimized
+after connect/disconnect CLI operations and after profile enumeration. This
+runs in the background, preserves VPN state and does not target other apps.

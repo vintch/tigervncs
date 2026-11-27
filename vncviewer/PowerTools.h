@@ -8,7 +8,7 @@
 #include <string>
 namespace powerTools {
 extern core::StringParameter plinkExecutable;
-enum class Action { PowerOff, Reboot, ForcePowerOff, ForceReboot };
+enum class Action { PowerOff, Reboot, ForcePowerOff, ForceReboot, UnlockFileVault };
 const char* label(Action action);
 bool actionForLabel(const std::string& label, Action& action);
 bool available();
@@ -23,8 +23,8 @@ struct Request {
   ~Request();
 };
 // No GUI, logs, plaintext files, or password-bearing process arguments.
-bool execute(const std::string& executable, const Request& request, unsigned timeoutMs = 15000);
-struct Job { std::atomic<bool> done{false}; bool success = false; };
+bool execute(const std::string& executable, const Request& request, unsigned timeoutMs = 15000, std::string* error = nullptr);
+struct Job { std::atomic<bool> done{false}; bool success = false; Action action = Action::PowerOff; std::string error; };
 std::shared_ptr<Job> start(Json::Value document, const std::string& computerId, Action action);
 }
 #endif

@@ -17,6 +17,7 @@ core::StringParameter plinkExecutable("PlinkExecutable", "PuTTY plink executable
 Request::~Request() { CredentialVault::erase(password); }
 const char* label(Action action) {
   switch (action) {
+    case Action::UnlockFileVault: return "Unlock FileVault";
     case Action::PowerOff: return "Power Off";
     case Action::Reboot: return "Reboot";
     case Action::ForcePowerOff: return "Force Power Off";
@@ -25,7 +26,7 @@ const char* label(Action action) {
   return "";
 }
 bool actionForLabel(const std::string& text, Action& action) {
-  for (auto candidate : {Action::PowerOff, Action::Reboot, Action::ForcePowerOff, Action::ForceReboot})
+  for (auto candidate : {Action::PowerOff, Action::Reboot, Action::ForcePowerOff, Action::ForceReboot, Action::UnlockFileVault})
     if (text == label(candidate)) { action = candidate; return true; }
   return false;
 }
@@ -93,7 +94,7 @@ std::wstring argument(const std::string& text) {
   }
   result.append(2 * slashes, L'\\'); return result + L'"';
 }
-std::string discoverHostKey(const std::string& executable, const Request& request, ULONGLONG deadline) {
+std::string discoverHostKey(const std::string& executable, const Request& request, ULONGLONG deadline, std::string* diagnostic) {
   // PuTTY 0.83 has no accept-any-key switch. A deliberately nonmatching
   // temporary key makes a credential-free probe report the presented key,
   // even when a different key is already cached. Nothing is persisted.
@@ -135,10 +136,11 @@ std::string discoverHostKey(const std::string& executable, const Request& reques
       response.append(buffer, count);
       if (response.size() > 65536) return "";
     }
-    if (GetTickCount64() >= deadline) return "";
+    if (GetTickCount64() >= deadline) { if (diagnostic) *diagnostic = "timed out"; return ""; }
     if (WaitForSingleObject(child.value, 20) == WAIT_OBJECT_0) {
       DWORD remaining = 0;
       if (PeekNamedPipe(output.value, nullptr, 0, nullptr, &remaining, nullptr) && remaining) continue;
+      if (diagnostic) *diagnostic = response;
       return fingerprintFromOutput(response);
     }
   }
@@ -156,13 +158,26 @@ bool writeOverlapped(HANDLE pipe, HANDLE event, const std::string& text, ULONGLO
   }
   return written == text.size();
 }
-bool run(const std::string& executable, const Request& request, unsigned timeoutMs) {
+std::string sshError(const std::string& trace) {
+  if (trace.find("Access denied") != std::string::npos || trace.find("authentication failed") != std::string::npos || trace.find("No supported authentication") != std::string::npos)
+    return "SSH authentication failed. Check the saved username, password and FileVault unlock permission.";
+  if (trace.find("Host does not exist") != std::string::npos || trace.find("getaddrinfo") != std::string::npos)
+    return "Unable to resolve the SSH server address.";
+  if (trace.find("Connection refused") != std::string::npos) return "The SSH server refused the connection. Check Remote Login.";
+  if (trace.find("timed out") != std::string::npos) return "The SSH connection timed out.";
+  return "Unable to establish the SSH connection or complete authentication.";
+}
+bool run(const std::string& executable, const Request& request, unsigned timeoutMs, std::string* error) {
+  bool unlocking = request.action == Action::UnlockFileVault;
+  if (error) *error = "Unable to start or communicate with PuTTY plink.";
   if (!executableAvailable(executable) || request.host.empty() || request.host[0] == '-' || request.username.empty() ||
       request.password.find_first_of("\r\n") != std::string::npos || request.password.find('\0') != std::string::npos ||
       request.password.size() > 4096 || request.username.find('\0') != std::string::npos || request.host.find('\0') != std::string::npos) return false;
   auto deadline = GetTickCount64() + timeoutMs;
-  const auto hostKey = discoverHostKey(executable, request, deadline);
-  if (hostKey.empty()) return false;
+  std::string diagnostic;
+  const auto hostKey = discoverHostKey(executable, request, deadline, &diagnostic);
+  if (hostKey.empty()) { if (error) *error = sshError(diagnostic); return false; }
+  diagnostic.clear();
   Handle token;
   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token.value)) return false;
   DWORD needed = 0; GetTokenInformation(token.value, TokenUser, nullptr, 0, &needed);
@@ -197,7 +212,7 @@ bool run(const std::string& executable, const Request& request, unsigned timeout
   if (errors.value == INVALID_HANDLE_VALUE) return false;
   STARTUPINFOEXW startup{}; startup.StartupInfo.cb = sizeof(startup);
   startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW; startup.StartupInfo.wShowWindow = SW_HIDE;
-  startup.StartupInfo.hStdInput = input.value; startup.StartupInfo.hStdOutput = outputWriter.value; startup.StartupInfo.hStdError = errors.value;
+  startup.StartupInfo.hStdInput = input.value; startup.StartupInfo.hStdOutput = outputWriter.value; startup.StartupInfo.hStdError = unlocking ? outputWriter.value : errors.value;
   SIZE_T size = 0; InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
   std::vector<unsigned char> attributes(size);
   startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
@@ -208,7 +223,8 @@ bool run(const std::string& executable, const Request& request, unsigned timeout
   std::wstring line = argument(executable) + L" -ssh -batch -T -noagent -noshare -no-antispoof -P 22 -l " + argument(request.username) + L" -pwfile " + argument(pipeName);
   // Accept the key discovered for this invocation, without a persistent pin.
   line += L" -hostkey " + argument(hostKey);
-  line += L" " + argument(request.host) + L" " + argument(remoteCommand(request.action, nonce));
+  if (unlocking) line += L" -v -N " + argument(request.host);
+  else line += L" " + argument(request.host) + L" " + argument(remoteCommand(request.action, nonce));
   Handle job; job.value = CreateJobObjectW(nullptr, nullptr);
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{}; limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
   if (!job.value || !SetInformationJobObject(job.value, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) return false;
@@ -226,7 +242,7 @@ bool run(const std::string& executable, const Request& request, unsigned timeout
   DWORD count = 0;
   // Fits the explicitly sized, empty stdin pipe; the child receives only the
   // sudo password here. Its SSH password uses the private named pipe instead.
-  if (!WriteFile(inputWriter.value, secret.data(), DWORD(secret.size()), &count, nullptr) || count != secret.size()) return false;
+  if (!unlocking && (!WriteFile(inputWriter.value, secret.data(), DWORD(secret.size()), &count, nullptr) || count != secret.size())) return false;
   CloseHandle(inputWriter.value); inputWriter.value = nullptr;
   while (!connected) {
     if (WaitForSingleObject(pipeEvent.value, 20) == WAIT_OBJECT_0) {
@@ -242,6 +258,7 @@ bool run(const std::string& executable, const Request& request, unsigned timeout
   // plaintext on disk. The pending-connect guard has already completed.
   CloseHandle(passwordPipe.value); passwordPipe.value = nullptr;
   std::string response;
+  bool authenticated = false, disconnected = false;
   const std::string acknowledgement = "TIGERVNCS_ACCEPTED_" + nonce;
   for (;;) {
     DWORD available = 0;
@@ -254,15 +271,23 @@ bool run(const std::string& executable, const Request& request, unsigned timeout
       while ((end = response.find('\n')) != std::string::npos) {
         auto lineText = response.substr(0, end);
         if (!lineText.empty() && lineText.back() == '\r') lineText.pop_back();
-        if (lineText == acknowledgement) return true;
+        if (unlocking) {
+          if (lineText == "Access granted") authenticated = true;
+          if (lineText.find("Remote side unexpectedly closed network connection") != std::string::npos || lineText.find("Server sent disconnect message") != std::string::npos || lineText.find("Connection closed by remote host") != std::string::npos) disconnected = true;
+          diagnostic += lineText + "\n";
+          if (diagnostic.size() > 65536) return false;
+        } else if (lineText == acknowledgement) return true;
         response.erase(0, end + 1);
       }
       if (response.size() > 65536) return false;
     }
-    if (GetTickCount64() >= deadline) return false;
+    if (GetTickCount64() >= deadline) { if (error) *error = authenticated ? "SSH login succeeded, but the server did not disconnect. FileVault may already be unlocked." : "The SSH connection or authentication timed out."; return false; }
     if (WaitForSingleObject(child.value, 20) == WAIT_OBJECT_0) {
       DWORD remaining = 0;
       if (PeekNamedPipe(output.value, nullptr, 0, nullptr, &remaining, nullptr) && remaining) continue;
+      DWORD code = 1; GetExitCodeProcess(child.value, &code);
+      if (unlocking && authenticated && (disconnected || code == 0)) return true;
+      if (error) *error = authenticated ? "SSH login succeeded, but the expected FileVault disconnect was not observed." : sshError(diagnostic);
       return false;
     }
   }
@@ -284,17 +309,17 @@ bool menuEnabled(const Json::Value& computer, bool plinkPresent, bool busy) {
   return plinkPresent && !busy && computer.isObject() && computer["username"].isString() &&
     !computer["username"].asString().empty() && computer["password"].isObject();
 }
-bool execute(const std::string& executable, const Request& request, unsigned timeoutMs) {
+bool execute(const std::string& executable, const Request& request, unsigned timeoutMs, std::string* error) {
   try {
 #ifdef WIN32
-    return run(executable, request, timeoutMs);
+    return run(executable, request, timeoutMs, error);
 #else
     (void)executable; (void)request; (void)timeoutMs; return false;
 #endif
   } catch (...) { return false; }
 }
 std::shared_ptr<Job> start(Json::Value document, const std::string& computerId, Action action) {
-  auto job = std::make_shared<Job>(); std::string executable(plinkExecutable);
+  auto job = std::make_shared<Job>(); job->action = action; job->error = "Saved SSH credentials are unavailable."; std::string executable(plinkExecutable);
   try {
     std::thread([document, computerId, action, executable, job]() {
       try {
@@ -303,7 +328,7 @@ std::shared_ptr<Job> start(Json::Value document, const std::string& computerId, 
           request.username = computer["username"].asString(); request.action = action;
           if (computer["password"].isNull()) break;
           request.password = CredentialVault::decrypt(document, computerId, computer["password"]);
-          job->success = execute(executable, request); break;
+          job->success = execute(executable, request, 15000, &job->error); break;
         }
       } catch (...) { job->success = false; }
       job->done.store(true, std::memory_order_release);

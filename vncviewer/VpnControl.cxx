@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "VpnControl.h"
+#include "OpenVpnWindow.h"
 #include "VpnElevation.h"
 #include <core/string.h>
 #include <algorithm>
@@ -278,7 +279,10 @@ Result command(const Settings& settings, const std::string& provider, bool conne
 #ifdef WIN32
     if (provider == "wireguard") return controlWireguard(settings, connect, profiles);
     if (provider != "openvpn" || profiles.size() != 1 || profiles.front().empty() || profiles.front().size() > 1024 || profiles.front().find('\0') != std::string::npos) return Result::Error;
-    return run(settings.openvpnExe, {(connect ? "--connect-shortcut=" : "--disconnect-shortcut=") + profiles.front()}) ? Result::Ok : Result::Error;
+    bool succeeded = run(settings.openvpnExe, {(connect ? "--connect-shortcut=" : "--disconnect-shortcut=") + profiles.front()});
+    // The CLI may raise an existing GUI or bring it up shortly after returning.
+    openVpnWindow::minimize(settings.openvpnExe);
+    return succeeded ? Result::Ok : Result::Error;
 #else
     (void)settings; (void)provider; (void)connect; (void)profiles; return Result::Error;
 #endif

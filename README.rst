@@ -58,10 +58,15 @@ Features added in this fork
   disconnect. Selecting a computer never connects a VPN automatically.
   Wireguard elevation is retained by a restricted helper until TigerVNCs
   closes. OpenVPN status combines adapter state with its connection log.
+  OpenVPN Connect windows are minimized after CLI commands and profile loading.
 * **SSH power tools for macOS.** Tools provides Power Off, Reboot, Force
   Power Off and Force Reboot through PuTTY plink, with confirmation and a
   hidden background invocation using the computer's saved credentials.
   These commands require plink, SSH access and suitable administrator rights.
+* **Unlock FileVault over SSH.** Tools / Unlock FileVault uses saved SSH
+  credentials without running a remote command. It checks authentication and
+  the following disconnect, with separate connection/authentication errors.
+  Requires Apple silicon, macOS 26+, Remote Login and a FileVault-enabled user.
 * **Shelly Plug Power On.** Supports original plugs and Plus Plug S v2 (Gen2).
   Configure a plug IP address or hostname and separate login
   credentials, then cycle its outlet through Tools / Power On. The delay

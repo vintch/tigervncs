@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "VpnProfiles.h"
+#include "OpenVpnWindow.h"
 #include <core/string.h>
 #include <algorithm>
 #include <cctype>
@@ -112,6 +113,7 @@ Catalog discover(const std::string& executable, const std::string& directory) {
   }
   try { result.openvpn = parseOpenVpn(listOpenVpn(executable)); }
   catch (const std::exception& error) { result.openvpnError = error.what(); }
+  openVpnWindow::minimize(executable);
   return result;
 }
 #endif

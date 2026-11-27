@@ -340,7 +340,8 @@ void ServerDialog::showContextMenu(Fl_Tree_Item* item)
     {"Power Off", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {"Reboot", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
     {"Force Power Off", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-    {"Force Reboot", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+    {"Force Reboot", 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
+    {"Unlock FileVault", 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},
     {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}
   };
@@ -350,7 +351,7 @@ void ServerDialog::showContextMenu(Fl_Tree_Item* item)
   bool sshAvailable = powerTools::menuEnabled(toolsComputer, powerTools::available(), bool(powerJob));
   bool powerOnAvailable = shellyPower::configured(toolsComputer);
   if (connectionProtocol::type(toolsComputer) == "rdp") menu[6].deactivate();
-  if (!sshAvailable) for (int index = 12; index <= 15; ++index) menu[index].deactivate();
+  if (!sshAvailable) for (int index = 12; index <= 16; ++index) menu[index].deactivate();
   if (!powerOnAvailable) menu[11].deactivate();
   if (!sshAvailable && !powerOnAvailable) menu[10].deactivate();
   if (!entry) menu[2].label(nullptr);
@@ -373,8 +374,13 @@ void ServerDialog::presenceTick(void* data)
     if (!job->error.empty()) fl_alert("%s", job->error.c_str());
   }
   if (d->powerJob && d->powerJob->done.load(std::memory_order_acquire)) {
-    bool success = d->powerJob->success; d->powerJob.reset();
+    bool success = d->powerJob->success;
+    if (d->powerJob->action == powerTools::Action::UnlockFileVault) {
+      std::string message = success ? "FileVault unlock completed successfully. SSH authentication succeeded and the connection ended." : d->powerJob->error;
+      d->powerJob.reset(); fl_message("%s", message.c_str());
+    } else { d->powerJob.reset();
     fl_message("%s", success ? "The command was sent successfully." : "The command could not be sent.");
+    }
   }
   if (d->editor->visible() && d->vpnCatalogLoading && !vpnProfiles::snapshot().loading) {
     int selected = d->vpnProfile->value();
