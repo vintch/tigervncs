@@ -137,6 +137,7 @@ try {
     $packagesInstalled = & "$msysRoot/usr/bin/pacman.exe" -Q
     if ($LASTEXITCODE -ne 0) { throw 'Could not record build dependencies.' }
     [ordered]@{
+        version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION_TIGERVNCS') -Raw).Trim()
         sourceCommit = "$revision"
         sourceHasLocalChanges = $sourceStatus.Count -gt 0
         configuration = 'Release, Windows x64, standalone, English UI'
@@ -161,6 +162,16 @@ try {
         packages = @($packagesInstalled)
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $distDir 'build-info.json') -Encoding UTF8
     Write-Output "Standalone viewer: $outputExe"
+    # Deploy only the executable. Never enumerate, copy or rewrite user settings.
+    $releaseDirectory = 'C:\SW\TigerVNCs'
+    New-Item -ItemType Directory -Path $releaseDirectory -Force | Out-Null
+    $releaseExe = Join-Path $releaseDirectory 'TigerVNCs.exe'
+    Copy-Item -LiteralPath $outputExe -Destination $releaseExe -Force
+    if ((Get-FileHash -LiteralPath $releaseExe -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath $outputExe -Algorithm SHA256).Hash) {
+        throw 'Deployed executable checksum does not match the final build.'
+    }
+    Write-Output "Deployed viewer: $releaseExe"
 } finally {
     $env:PATH = $savedPath
     $env:MSYSTEM = $savedSystem

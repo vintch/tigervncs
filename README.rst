@@ -4,7 +4,7 @@ TigerVNCs
 TigerVNCs is a fork of `TigerVNC <https://github.com/TigerVNC/tigervnc>`_
 focused on a portable Windows viewer for macOS Screen Sharing and everyday
 remote administration. The Windows application is named **TigerVNCs.exe**.
-Its interface is in English. The original TigerVNC sources, licensing and
+Current fork revision: **1.4**. Its interface is in English. The original TigerVNC sources, licensing and
 acknowledgements are retained below.
 
 Features added in this fork
@@ -119,6 +119,11 @@ inside ``.tools`` in the checkout. It needs network access and a Windows short
 path without spaces (the script checks this). Subsequent builds use::
 
     .\build-windows.ps1 -RunTests
+
+The final executable is also copied to ``C:\SW\TigerVNCs\TigerVNCs.exe``;
+configuration files in that directory are never copied or modified.
+``VERSION_TIGERVNCS`` defines the fork revision; each new feature increments
+its minor integer (1.9, 1.10, 1.11), independently of the upstream version.
 
 Output: ``dist/TigerVNCs.exe`` and ``dist/build-info.json`` containing the
 source revision, checksum and dependency information. The script excludes

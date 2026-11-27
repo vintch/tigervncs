@@ -99,11 +99,11 @@ static const char *about_text()
   // time.
   snprintf(buffer, sizeof(buffer),
            _("TigerVNCs v%s\n"
-             "Skalierung und Computerliste mod, ver 1.0\n"
+             "Skalierung und Computerliste mod, ver %s\n"
              "Built on: %s\n"
              "Copyright (C) 1999-%d TigerVNC team and many others (see README.rst)\n"
              "See https://www.tigervnc.org for information on TigerVNCs."),
-           PACKAGE_VERSION, BUILD_TIMESTAMP, 2026);
+           TIGERVNCS_MOD_VERSION, TIGERVNCS_MOD_VERSION, BUILD_TIMESTAMP, 2026);
 
   return buffer;
 }

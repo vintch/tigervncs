@@ -21,6 +21,11 @@ include(CMakeMacroLibtoolFile)
 
 project(tigervnc)
 set(VERSION 1.16.80)
+file(STRINGS "${CMAKE_SOURCE_DIR}/VERSION_TIGERVNCS" TIGERVNCS_MOD_VERSION LIMIT_COUNT 1)
+if(NOT TIGERVNCS_MOD_VERSION MATCHES "^[0-9]+\\.[0-9]+$")
+  message(FATAL_ERROR "Invalid TigerVNCs revision")
+endif()
+string(REPLACE . , TIGERVNCS_RC_VERSION "${TIGERVNCS_MOD_VERSION}.0.0")
 
 # The RC version must always be four comma-separated numbers
 string(REPLACE . , RCVERSION "${VERSION}.0")

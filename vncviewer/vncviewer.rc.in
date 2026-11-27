@@ -25,8 +25,8 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION @RCVERSION@
- PRODUCTVERSION @RCVERSION@
+ FILEVERSION @TIGERVNCS_RC_VERSION@
+ PRODUCTVERSION @TIGERVNCS_RC_VERSION@
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -45,13 +45,13 @@ BEGIN
             VALUE "CompanyName", "TigerVNC team\0"
             VALUE "FileDescription", "TigerVNCs\0"
             VALUE "ProductName", "TigerVNCs\0"
-            VALUE "FileVersion", "@RCVERSION@\0"
+            VALUE "FileVersion", "@TIGERVNCS_RC_VERSION@\0"
             VALUE "InternalName", "TigerVNCs\0"
             VALUE "LegalCopyright", "Copyright (C) 1999-2026 TigerVNC team and many others (see README.rst)\0"
             VALUE "LegalTrademarks", "TigerVNCs\0"
             VALUE "OriginalFilename", "TigerVNCs.exe\0"
             VALUE "PrivateBuild", "\0"
-            VALUE "ProductVersion", "@VERSION@\0"
+            VALUE "ProductVersion", "@TIGERVNCS_MOD_VERSION@\0"
             VALUE "SpecialBuild", "\0"
         END
     END
