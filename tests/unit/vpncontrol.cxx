@@ -103,10 +103,30 @@ TEST(VpnControl, WrongProfileOnlyDisconnectsAfterConfirmationNeverAutoConnects) 
 
 TEST(VpnControl, MinimizesOnlyWindowsOwnedByTheRequestedExecutable) {
   HWND window=CreateWindowExW(0,L"STATIC",L"TigerVNCs VPN window test",WS_OVERLAPPEDWINDOW,0,0,160,80,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
-  ASSERT_NE(window,nullptr); ShowWindow(window,SW_SHOWNOACTIVATE);
+  ASSERT_NE(window,nullptr);
+  // Model an Electron window that ignores the ordinary minimize system command.
+  SetWindowLongPtrW(window,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(+[](HWND hwnd,UINT message,WPARAM wParam,LPARAM lParam)->LRESULT {
+    if (message==WM_SYSCOMMAND && (wParam & 0xfff0)==SC_MINIMIZE) return 0;
+    return DefWindowProcW(hwnd,message,wParam,lParam);
+  }));
+  ShowWindow(window,SW_SHOWNOACTIVATE);
   auto pump=[]() { MSG message; while (PeekMessageW(&message,nullptr,0,0,PM_REMOVE)) { TranslateMessage(&message); DispatchMessageW(&message); } };
-  openVpnWindow::minimize("C:\\not-the-owner.exe"); pump(); EXPECT_FALSE(IsIconic(window));
+  openVpnWindow::minimizeOnce("C:\\not-the-owner.exe"); pump(); EXPECT_FALSE(IsIconic(window));
   wchar_t path[32768]; GetModuleFileNameW(nullptr,path,32768);
-  openVpnWindow::minimize(std::filesystem::path(path).u8string()); pump(); EXPECT_TRUE(IsIconic(window));
+  openVpnWindow::minimizeOnce(std::filesystem::path(path).u8string()); pump(); EXPECT_TRUE(IsIconic(window));
   DestroyWindow(window);
+}
+
+TEST(VpnControl, MinimizesWindowsAppearingAfterTheCliHasExited) {
+  wchar_t path[32768]; GetModuleFileNameW(nullptr,path,32768);
+  openVpnWindow::minimize(std::filesystem::path(path).u8string());
+  Sleep(1300);
+  HWND window=CreateWindowExW(0,L"STATIC",L"Delayed VPN test",WS_OVERLAPPEDWINDOW,0,0,160,80,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
+  ASSERT_NE(window,nullptr); ShowWindow(window,SW_SHOWNOACTIVATE);
+  auto deadline=GetTickCount64()+2000;
+  while (!IsIconic(window) && GetTickCount64()<deadline) {
+    MSG message; while (PeekMessageW(&message,nullptr,0,0,PM_REMOVE)) { TranslateMessage(&message); DispatchMessageW(&message); }
+    Sleep(20);
+  }
+  EXPECT_TRUE(IsIconic(window)); openVpnWindow::cancelPending(); DestroyWindow(window);
 }
