@@ -115,7 +115,12 @@ TEST(PowerTools, FileVaultRequiresAuthenticationAndRemoteDisconnectWithoutComman
   for (const char* scenario : {"unlock-success", "unlock-denied", "unlock-before-auth", "unlock-no-close", "unlock-open"}) {
     Mode mode(scenario); auto value=request(); value.action=powerTools::Action::UnlockFileVault;
     std::string error;
+    auto began=std::chrono::steady_clock::now();
     bool success=powerTools::execute(stubPath(),value,1500,&error);
+    if (std::string(scenario)=="unlock-open") {
+      auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-began).count();
+      EXPECT_GE(elapsed,3900); EXPECT_LT(elapsed,5500);
+    }
     EXPECT_EQ(success,std::string(scenario)=="unlock-success") << scenario;
     if (!success) EXPECT_FALSE(error.empty()) << scenario;
     if (std::string(scenario)=="unlock-denied") EXPECT_NE(error.find("authentication failed"),std::string::npos);
