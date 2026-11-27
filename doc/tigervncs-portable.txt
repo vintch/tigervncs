@@ -409,7 +409,9 @@ start. Success requires authentication followed by remote disconnect/normal
 connection completion. A drop before authentication, authentication failure,
 DNS/connect failure or timeout is an error. If an already unlocked Mac keeps
 SSH open, the action times out and reports that unlock was not confirmed.
-The operation runs in the background; ping status does not gate the menu.
+The operation starts immediately without confirmation and runs in the background;
+ping status does not gate the menu. After SSH authentication succeeds, the
+FileVault disconnect timeout is four seconds, separate from SSH establishment.
 References:
 https://support.apple.com/guide/security/sec8447f5049/web
 https://github.com/apple-oss-distributions/OpenSSH/blob/main/apple_ssh_and_filevault.7
@@ -420,7 +422,7 @@ runs in the background, preserves VPN state and does not target other apps.
 
 Fork revision and final executable
 ---------------------------------
-VERSION_TIGERVNCS is the single fork version source. Revision 1.4 is displayed
+VERSION_TIGERVNCS is the single fork version source. Revision 1.5 is displayed
 in About and Windows executable metadata. The minor integer increases once
 per new feature; major revisions require explicit user approval.
 Final builds copy only TigerVNCs.exe to C:\SW\TigerVNCs. Configuration files in

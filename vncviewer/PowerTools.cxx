@@ -272,7 +272,11 @@ bool run(const std::string& executable, const Request& request, unsigned timeout
         auto lineText = response.substr(0, end);
         if (!lineText.empty() && lineText.back() == '\r') lineText.pop_back();
         if (unlocking) {
-          if (lineText == "Access granted") authenticated = true;
+          if (lineText == "Access granted" && !authenticated) {
+            authenticated = true;
+            // FileVault disconnect wait starts only after successful SSH login.
+            deadline = GetTickCount64() + 4000;
+          }
           if (lineText.find("Remote side unexpectedly closed network connection") != std::string::npos || lineText.find("Server sent disconnect message") != std::string::npos || lineText.find("Connection closed by remote host") != std::string::npos) disconnected = true;
           diagnostic += lineText + "\n";
           if (diagnostic.size() > 65536) return false;

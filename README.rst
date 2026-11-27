@@ -4,7 +4,7 @@ TigerVNCs
 TigerVNCs is a fork of `TigerVNC <https://github.com/TigerVNC/tigervnc>`_
 focused on a portable Windows viewer for macOS Screen Sharing and everyday
 remote administration. The Windows application is named **TigerVNCs.exe**.
-Current fork revision: **1.4**. Its interface is in English. The original TigerVNC sources, licensing and
+Current fork revision: **1.5**. Its interface is in English. The original TigerVNC sources, licensing and
 acknowledgements are retained below.
 
 Features added in this fork
@@ -64,7 +64,8 @@ Features added in this fork
   hidden background invocation using the computer's saved credentials.
   These commands require plink, SSH access and suitable administrator rights.
 * **Unlock FileVault over SSH.** Tools / Unlock FileVault uses saved SSH
-  credentials without running a remote command. It checks authentication and
+  credentials without confirmation or running a remote command. After login it
+  waits up to four seconds for the disconnect. It checks authentication and
   the following disconnect, with separate connection/authentication errors.
   Requires Apple silicon, macOS 26+, Remote Login and a FileVault-enabled user.
 * **Shelly Plug Power On.** Supports original plugs and Plus Plug S v2 (Gen2).

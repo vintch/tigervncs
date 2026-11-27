@@ -1,6 +1,6 @@
 # TigerVNCs fork workflow
 
-- The fork revision is defined in VERSION_TIGERVNCS (currently 1.4).
+- The fork revision is defined in VERSION_TIGERVNCS.
 - Increase the minor integer once for each new feature: 1.9, 1.10, 1.11, etc.
   Do not change the major integer without the user's explicit agreement.
   Rebuilding the same feature does not increment its revision.

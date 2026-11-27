@@ -462,7 +462,8 @@ void ServerDialog::runPowerTool(powerTools::Action action) {
     bool force = action == powerTools::Action::ForcePowerOff || action == powerTools::Action::ForceReboot;
     std::string question = std::string(powerTools::label(action)) + " \"" + name + "\"?";
     if (force) question += "\n\nUnsaved data may be lost.";
-    if (fl_choice("%s", "Cancel", "Confirm", nullptr, question.c_str()) != 1) return;
+    if (action != powerTools::Action::UnlockFileVault &&
+        fl_choice("%s", "Cancel", "Confirm", nullptr, question.c_str()) != 1) return;
     powerJob = powerTools::start(std::move(document), computerId, action);
   } catch (...) { fl_message("The command could not be sent."); }
 }
