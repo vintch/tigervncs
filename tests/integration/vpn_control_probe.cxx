@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
       auto state = vpnControl::query(vpnControl::settings());
       Json::Value output;
-      for (auto entry : {std::make_pair("wireguard", state.wireguard), std::make_pair("openvpn", state.openvpn)}) {
+      for (auto entry : {std::make_pair("wireguard", state.wireguard), std::make_pair("openvpn", state.openvpn), std::make_pair("azure", state.azure)}) {
         output[entry.first]["valid"] = entry.second.valid; output[entry.first]["connected"] = entry.second.connected;
         output[entry.first]["transitioning"] = entry.second.transitioning;
         output[entry.first]["profiles"] = Json::Value(Json::arrayValue);

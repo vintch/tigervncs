@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <gtest/gtest.h>
 #include "VpnControl.h"
+#include "ConnectionStore.h"
+#include <cstdio>
 #include "OpenVpnWindow.h"
 #include <windows.h>
 #include <filesystem>
@@ -129,4 +131,31 @@ TEST(VpnControl, MinimizesWindowsAppearingAfterTheCliHasExited) {
     Sleep(20);
   }
   EXPECT_TRUE(IsIconic(window)); openVpnWindow::cancelPending(); DestroyWindow(window);
+}
+
+TEST(VpnControl, AzureUsesIndependentGreyAmberGreenAndTransitionStates) {
+  Json::Value computer; computer["vpn"]["enabled"]=true; computer["vpn"]["provider"]="azure"; computer["vpn"]["profileId"]="Saved Azure profile";
+  auto target=association(computer); EXPECT_TRUE(target.enabled);
+  Snapshot status; status.openvpn.valid=true; status.openvpn.connected=true;
+  EXPECT_FALSE(presentation(target,status,false).enabled);
+  status.azure.valid=true;
+  EXPECT_EQ(presentation(target,status,false).colour,Colour::Grey);
+  EXPECT_TRUE(plan(target,status).connect);
+  status.azure.connected=true; status.azure.profiles={"Other Azure profile"};
+  EXPECT_EQ(presentation(target,status,false).colour,Colour::Amber);
+  auto different=plan(target,status); EXPECT_TRUE(different.confirmation); EXPECT_FALSE(different.connect);
+  EXPECT_EQ(different.profiles.front(),"Other Azure profile");
+  status.azure.profiles={target.profile};
+  EXPECT_EQ(presentation(target,status,false).colour,Colour::Green);
+  EXPECT_FALSE(plan(target,status).connect);
+  status.azure.transitioning=true; EXPECT_FALSE(presentation(target,status,false).enabled);
+  status.azure.transitioning=false; EXPECT_FALSE(presentation(target,status,true).enabled);
+}
+TEST(VpnControl, AzureAssociationSurvivesSavedComputerReload) {
+  const char* path="azure-profile-store-test.json"; std::remove(path);
+  Json::Value vpn; vpn["enabled"]=true; vpn["provider"]="azure"; vpn["profileId"]="Profile with spaces";
+  std::string id;
+  { ConnectionStore store(path); id=store.saveConnection("","Azure computer","host","","",ConnectionStore::KeepPassword,"","current-screen",vpn); }
+  { ConnectionStore store(path); auto target=association(store.connection(id)); EXPECT_TRUE(target.enabled); EXPECT_EQ(target.provider,"azure"); EXPECT_EQ(target.profile,"Profile with spaces"); }
+  std::remove(path);
 }
