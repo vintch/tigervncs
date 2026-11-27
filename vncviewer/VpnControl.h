@@ -12,7 +12,7 @@ struct State {
   bool valid = false, connected = false, transitioning = false;
   std::vector<std::string> profiles;
 };
-struct Snapshot { State wireguard, openvpn; };
+struct Snapshot { State wireguard, openvpn, azure; };
 struct Settings { std::string openvpnExe, wireguardDirectory, openvpnLog; std::vector<vpnProfiles::Profile> profiles; };
 enum class Colour { Grey, Amber, Green };
 struct Presentation { Colour colour = Colour::Grey; bool enabled = false; };

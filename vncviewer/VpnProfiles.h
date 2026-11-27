@@ -12,7 +12,7 @@ struct Profile {
   Profile(const std::string& identifier = "", const std::string& label = "", const std::string& server = "", const std::string& user = "")
     : id(identifier), name(label), host(server), username(user) {}
 };
-struct Catalog { std::vector<Profile> wireguard, openvpn; std::string wireguardError, openvpnError; bool loading = false; };
+struct Catalog { std::vector<Profile> wireguard, openvpn, azure; std::string wireguardError, openvpnError, azureError; bool loading = false; };
 void refresh();
 Catalog snapshot();
 std::vector<Profile> parseOpenVpn(const std::string& text);

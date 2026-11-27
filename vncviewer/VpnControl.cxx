@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "VpnControl.h"
+#include "AzureVpn.h"
 #include "OpenVpnWindow.h"
 #include "VpnElevation.h"
 #include <core/string.h>
@@ -19,14 +20,14 @@ Association association(const Json::Value& computer) {
   if (!computer.isObject()) return value;
   const auto& vpn = computer["vpn"];
   if (!vpn.isObject() || vpn["enabled"] != true || !vpn["profileId"].isString() ||
-      (vpn["provider"] != "wireguard" && vpn["provider"] != "openvpn")) return value;
+      (vpn["provider"] != "wireguard" && vpn["provider"] != "openvpn" && vpn["provider"] != "azure")) return value;
   value.profile = vpn["profileId"].asString(); value.provider = vpn["provider"].asString();
   value.enabled = !value.profile.empty(); return value;
 }
 Presentation presentation(const Association& target, const Snapshot& status, bool busy) {
   Presentation value;
   if (!target.enabled || busy) return value;
-  const State& state = target.provider == "wireguard" ? status.wireguard : status.openvpn;
+  const State& state = target.provider == "wireguard" ? status.wireguard : target.provider == "azure" ? status.azure : status.openvpn;
   if (!state.valid || state.transitioning) return value;
   value.enabled = true;
   if (state.connected) value.colour = std::find(state.profiles.begin(), state.profiles.end(), target.profile) != state.profiles.end() ? Colour::Green : Colour::Amber;
@@ -38,7 +39,7 @@ Plan plan(const Association& target, const Snapshot& status) {
   if (!appearance.enabled) return value;
   value.connect = appearance.colour == Colour::Grey;
   value.confirmation = appearance.colour == Colour::Amber;
-  if (value.confirmation) value.profiles = (target.provider == "wireguard" ? status.wireguard : status.openvpn).profiles;
+  if (value.confirmation) value.profiles = (target.provider == "wireguard" ? status.wireguard : target.provider == "azure" ? status.azure : status.openvpn).profiles;
   else value.profiles.push_back(target.profile);
   value.available = !value.profiles.empty(); return value;
 }
@@ -269,6 +270,7 @@ Snapshot query(const Settings& settings) {
 #ifdef WIN32
   try { value.wireguard = wireguardState(); } catch (...) {}
   try { value.openvpn = openvpnState(settings); } catch (...) {}
+  try { auto state=azureVpn::query(); value.azure.valid=true; value.azure.connected=state.connected; value.azure.transitioning=state.transitioning; value.azure.profiles=state.profiles; } catch (...) {}
 #else
   (void)settings;
 #endif
@@ -278,6 +280,19 @@ Result command(const Settings& settings, const std::string& provider, bool conne
   try {
 #ifdef WIN32
     if (provider == "wireguard") return controlWireguard(settings, connect, profiles);
+    if (provider == "azure") {
+      if (profiles.size()!=1) return Result::Error;
+      auto available=azureVpn::profiles();
+      if (std::find(available.begin(),available.end(),profiles.front())==available.end()) return Result::Error;
+      if (!connect) return azureVpn::disconnect(profiles.front()) ? Result::Ok : Result::Error;
+      wchar_t directory[MAX_PATH]; if (!GetSystemDirectoryW(directory,MAX_PATH)) return Result::Error;
+      auto executable=core::utf16ToUTF8(directory)+"\\rasdial.exe";
+      std::vector<std::string> args{profiles.front()};
+      args.push_back("/phonebook:"+core::utf16ToUTF8(azureVpn::phonebook().c_str()));
+      if (!run(executable,args,60000)) return Result::Error;
+      auto state=azureVpn::query();
+      return std::find(state.profiles.begin(),state.profiles.end(),profiles.front())!=state.profiles.end() ? Result::Ok : Result::Error;
+    }
     if (provider != "openvpn" || profiles.size() != 1 || profiles.front().empty() || profiles.front().size() > 1024 || profiles.front().find('\0') != std::string::npos) return Result::Error;
     bool succeeded = run(settings.openvpnExe, {(connect ? "--connect-shortcut=" : "--disconnect-shortcut=") + profiles.front()});
     // The CLI may raise an existing GUI or bring it up shortly after returning.

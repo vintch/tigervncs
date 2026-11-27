@@ -4,7 +4,7 @@ TigerVNCs
 TigerVNCs is a fork of `TigerVNC <https://github.com/TigerVNC/tigervnc>`_
 focused on a portable Windows viewer for macOS Screen Sharing and everyday
 remote administration. The Windows application is named **TigerVNCs.exe**.
-Current fork revision: **1.5**. Its interface is in English. The original TigerVNC sources, licensing and
+Current fork revision: **1.6**. Its interface is in English. The original TigerVNC sources, licensing and
 acknowledgements are retained below.
 
 Features added in this fork
@@ -53,12 +53,14 @@ Features added in this fork
   with staggered ICMP requests: green after a reply, blue after two failures.
   Ping timing and enablement are configurable; monitoring pauses during VNC
   sessions and recovery. Ping status does not gate SSH or VPN commands.
-* **Manual Wireguard and OpenVPN Connect controls.** Associate a VPN profile
+* **Manual Wireguard, OpenVPN Connect and Azure VPN controls.** Associate a VPN profile
   with each computer and use the grey/amber/green VPN button to connect or
   disconnect. Selecting a computer never connects a VPN automatically.
   Wireguard elevation is retained by a restricted helper until TigerVNCs
   closes. OpenVPN status combines adapter state with its connection log.
   OpenVPN Connect windows are minimized after CLI commands and profile loading.
+  Azure VPN profiles and live status come from Windows RAS; existing client
+  authentication is reused without saving Azure credentials in TigerVNCs.
 * **SSH power tools for macOS.** Tools provides Power Off, Reboot, Force
   Power Off and Force Reboot through PuTTY plink, with confirmation and a
   hidden background invocation using the computer's saved credentials.
@@ -98,7 +100,7 @@ with content scaling. Native display preferences are restored after exit;
 your saved width and height remain available for later use.
 
 Optional tools are installed separately: PuTTY plink for SSH actions,
-Wireguard and/or OpenVPN Connect for VPN control, and a compatible Shelly
+Wireguard, OpenVPN Connect and/or Azure VPN Client for VPN control, and a compatible Shelly
 Plug for outlet control. The Mac must be configured to start when power
 returns for Shelly Power On to start it.
 

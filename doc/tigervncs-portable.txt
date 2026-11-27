@@ -422,7 +422,7 @@ runs in the background, preserves VPN state and does not target other apps.
 
 Fork revision and final executable
 ---------------------------------
-VERSION_TIGERVNCS is the single fork version source. Revision 1.5 is displayed
+VERSION_TIGERVNCS is the single fork version source. Revision 1.6 is displayed
 in About and Windows executable metadata. The minor integer increases once
 per new feature; major revisions require explicit user approval.
 Final builds copy only TigerVNCs.exe to C:\SW\TigerVNCs. Configuration files in
@@ -430,3 +430,19 @@ that directory are never overwritten or migrated by the build script.
 OpenVPN minimization uses asynchronous Windows show-state updates and watches
 for late GUI activation for up to 15 seconds after a CLI operation, without
 holding the VPN command busy. A newer request supersedes the older watcher.
+
+Azure VPN Client
+----------------
+Choose Azure VPN in the computer editor's VPN provider list, then select an
+existing Azure VPN Client profile. Profile names are enumerated from the current
+user's Microsoft.AzureVpn_8wekyb3d8bbwe/LocalState/rasphone.pbk using Windows RAS.
+No new executable path or log setting is required. Windows rasdial initiates
+the selected profile using its existing client authentication. Any required
+Microsoft sign-in remains handled by Azure VPN Client/Windows.
+RAS connection handles, exact phonebook paths and connection states identify
+active Azure profiles. Disconnect uses RasHangUp only on the selected Azure
+profile's handles and waits for their removal. Other providers are unaffected.
+The existing VPN button remains manual: grey connects, green disconnects, amber
+asks before disconnecting another profile; query failures disable it silently.
+All discovery, status queries and commands run away from the UI thread.
+Reference: https://learn.microsoft.com/en-us/windows/win32/rras/phone-book-files-and-connection-information

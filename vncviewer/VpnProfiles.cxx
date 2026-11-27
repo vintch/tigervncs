@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "VpnProfiles.h"
+#include "AzureVpn.h"
 #include "OpenVpnWindow.h"
 #include <core/string.h>
 #include <algorithm>
@@ -97,6 +98,8 @@ std::string listOpenVpn(const std::string& executable) {
 }
 Catalog discover(const std::string& executable, const std::string& directory) {
   Catalog result;
+  try { for (const auto& name:azureVpn::profiles()) result.azure.push_back({name,name}); sortProfiles(result.azure); }
+  catch (const std::exception& error) { result.azureError=error.what(); }
   auto pattern = core::utf8ToUTF16((directory + "\\*").c_str());
   WIN32_FIND_DATAW data{};
   HANDLE search = FindFirstFileW(pattern.c_str(), &data);
@@ -153,7 +156,7 @@ std::vector<Profile> parseOpenVpn(const std::string& text) {
 void validateAssociation(const Json::Value& value) {
   if (value.isNull()) return;
   if (!value.isObject() || !value["enabled"].isBool() ||
-      (value["provider"] != "wireguard" && value["provider"] != "openvpn") ||
+      (value["provider"] != "wireguard" && value["provider"] != "openvpn" && value["provider"] != "azure") ||
       !value["profileId"].isString() || value["profileId"].asString().size() > 1024 ||
       value["profileId"].asString().find('\0') != std::string::npos ||
       (value["enabled"].asBool() && value["profileId"].asString().empty()))
@@ -179,7 +182,7 @@ void refresh() {
 #ifdef WIN32
           result = discover(executable, directory);
 #endif
-        } catch (...) { result.wireguardError = result.openvpnError = "VPN profile discovery failed."; }
+        } catch (...) { result.wireguardError = result.openvpnError = result.azureError = "VPN profile discovery failed."; }
         std::lock_guard<std::mutex> lock(shared->mutex);
         if (generation == shared->generation) shared->catalog = std::move(result);
         if (!shared->pending) { shared->running = false; return; }

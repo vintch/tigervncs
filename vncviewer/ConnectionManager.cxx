@@ -74,7 +74,7 @@ void ServerDialog::createManager(int top)
   associateVpn = new Fl_Check_Button(112, y, 318, 24, "Associate VPN-Connection"); y += 28;
   associateVpn->callback(vpnAction, this);
   vpnProvider = new Fl_Choice(112, y, 110, 25, "VPN:");
-  vpnProvider->add("Wireguard"); vpnProvider->add("OpenVPN"); vpnProvider->value(0);
+  vpnProvider->add("Wireguard"); vpnProvider->add("OpenVPN"); vpnProvider->add("Azure VPN"); vpnProvider->value(0);
   vpnProvider->callback(vpnAction, this);
   vpnProfile = new Fl_Choice(230, y, 200, 25); y += 32;
   vpnProfile->tooltip("VPN profile");
@@ -207,7 +207,7 @@ void ServerDialog::editEntry(bool folder, bool existing)
   updateConnectionType();
   const auto& vpn = record["vpn"];
   associateVpn->value(vpn.isObject() && vpn.get("enabled", false) == true);
-  vpnProvider->value(vpn.isObject() && vpn.get("provider", "wireguard") == "openvpn" ? 1 : 0);
+  vpnProvider->value(vpn.isObject() && vpn.get("provider", "wireguard") == "azure" ? 2 : vpn.get("provider", "wireguard") == "openvpn" ? 1 : 0);
   updateVpnProfiles(vpn.isObject() && vpn["profileId"].isString() ? vpn["profileId"].asString() : "");
   entryFolder->clear(); folderIds.clear(); folderLabels.clear();
   std::vector<Fl_Menu_Item> menu;
@@ -298,7 +298,7 @@ void ServerDialog::performManagerAction(const std::string& action)
             (d->editingId.empty() || d->store.connection(d->editingId)["powerOn"]["password"].isNull()))) plugChange = ConnectionStore::SetPassword;
         Json::Value vpn(Json::objectValue);
         vpn["enabled"] = bool(d->associateVpn->value());
-        vpn["provider"] = d->vpnProvider->value() == 1 ? "openvpn" : "wireguard";
+        vpn["provider"] = d->vpnProvider->value() == 2 ? "azure" : d->vpnProvider->value() == 1 ? "openvpn" : "wireguard";
         int profile = d->vpnProfile->value();
         vpn["profileId"] = profile >= 0 && size_t(profile) < d->vpnProfileIds.size() ? d->vpnProfileIds[profile] : "";
         try {
@@ -426,8 +426,8 @@ void ServerDialog::vpnAction(Fl_Widget* widget, void* data) {
 }
 void ServerDialog::updateVpnProfiles(const std::string& selected) {
   auto catalog = vpnProfiles::snapshot(); vpnCatalogLoading = catalog.loading;
-  const auto& profiles = vpnProvider->value() == 1 ? catalog.openvpn : catalog.wireguard;
-  const auto& error = vpnProvider->value() == 1 ? catalog.openvpnError : catalog.wireguardError;
+  const auto& profiles = vpnProvider->value() == 2 ? catalog.azure : vpnProvider->value() == 1 ? catalog.openvpn : catalog.wireguard;
+  const auto& error = vpnProvider->value() == 2 ? catalog.azureError : vpnProvider->value() == 1 ? catalog.openvpnError : catalog.wireguardError;
   vpnProfile->clear(); vpnProfileIds.clear();
   std::vector<Fl_Menu_Item> items;
   vpnProfileLabels.clear();
