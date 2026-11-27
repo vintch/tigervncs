@@ -11,7 +11,7 @@ int wmain(int argc, wchar_t** argv) {
   if (mode == "early-exit") return 1;
   if (mode == "timeout-connect") { Sleep(10000); return 1; }
   bool discovery = false;
-  for (int i = 1; i < argc; ++i) if (std::wstring(argv[i]) == L"-v") discovery = true;
+  for (int i = 1; i < argc; ++i) if (std::wstring(argv[i]) == L"SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") discovery = true;
   if (discovery) {
     const char output[] = "Host key fingerprint is:\r\nssh-ed25519 255 SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\r\n";
     DWORD count;
@@ -21,10 +21,12 @@ int wmain(int argc, wchar_t** argv) {
   const std::string expected = "p@ss ' quote \\ special!";
   if (std::wstring(GetCommandLineW()).find(L"p@ss") != std::wstring::npos) return 21;
   std::wstring pipe, user, host; std::string command;
+  bool unlock = false;
   bool batch = false, noAgent = false, noShare = false, temporaryKey = false;
   for (int i = 1; i < argc; ++i) {
     std::wstring arg = argv[i];
-    if (arg == L"-pwfile" && i + 1 < argc) pipe = argv[++i];
+    if (arg == L"-N") unlock = true;
+    else if (arg == L"-pwfile" && i + 1 < argc) pipe = argv[++i];
     else if (arg == L"-l" && i + 1 < argc) user = argv[++i];
     else if (arg == L"-P" && i + 1 < argc) ++i;
     else if (arg == L"-hostkey" && i + 1 < argc) temporaryKey = std::wstring(argv[++i]) == L"SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
@@ -44,6 +46,14 @@ int wmain(int argc, wchar_t** argv) {
   fclose(file);
   if (!passwordMatches) return 24;
   DWORD count = 0;
+  if (unlock) {
+    if (!command.empty()) return 30;
+    std::string trace = mode == "unlock-denied" ? "Access denied\r\n" : mode == "unlock-before-auth" ? "Remote side unexpectedly closed network connection\r\n" : "Access granted\r\n";
+    if (mode == "unlock-success") trace += "FATAL ERROR: Remote side unexpectedly closed network connection\r\n";
+    WriteFile(GetStdHandle(STD_ERROR_HANDLE), trace.data(), DWORD(trace.size()), &count, nullptr);
+    if (mode == "unlock-open") Sleep(10000);
+    return 1;
+  }
   if (!ReadFile(GetStdHandle(STD_INPUT_HANDLE), buffer, sizeof(buffer), &count, nullptr) || std::string(buffer, count) != expected + "\n") return 25;
   if (mode == "hang") { Sleep(10000); return 1; }
   if (mode == "no-ack") return 0;

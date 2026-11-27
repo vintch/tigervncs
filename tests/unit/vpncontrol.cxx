@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <gtest/gtest.h>
 #include "VpnControl.h"
+#include "OpenVpnWindow.h"
 #include <windows.h>
 #include <filesystem>
 using namespace vpnControl;
@@ -98,4 +99,14 @@ TEST(VpnControl, WrongProfileOnlyDisconnectsAfterConfirmationNeverAutoConnects) 
   status.openvpn.profiles[0] = "selected";
   auto green = plan(target, status);
   EXPECT_TRUE(green.available); EXPECT_FALSE(green.connect); EXPECT_FALSE(green.confirmation);
+}
+
+TEST(VpnControl, MinimizesOnlyWindowsOwnedByTheRequestedExecutable) {
+  HWND window=CreateWindowExW(0,L"STATIC",L"TigerVNCs VPN window test",WS_OVERLAPPEDWINDOW,0,0,160,80,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
+  ASSERT_NE(window,nullptr); ShowWindow(window,SW_SHOWNOACTIVATE);
+  auto pump=[]() { MSG message; while (PeekMessageW(&message,nullptr,0,0,PM_REMOVE)) { TranslateMessage(&message); DispatchMessageW(&message); } };
+  openVpnWindow::minimize("C:\\not-the-owner.exe"); pump(); EXPECT_FALSE(IsIconic(window));
+  wchar_t path[32768]; GetModuleFileNameW(nullptr,path,32768);
+  openVpnWindow::minimize(std::filesystem::path(path).u8string()); pump(); EXPECT_TRUE(IsIconic(window));
+  DestroyWindow(window);
 }

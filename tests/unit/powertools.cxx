@@ -110,3 +110,14 @@ TEST(PowerTools, ParsesOnlyCompleteTemporaryServerFingerprints) {
   EXPECT_EQ(powerTools::fingerprintFromOutput("Host key fingerprint is:\nSHA256:short"), "");
   EXPECT_EQ(powerTools::fingerprintFromOutput("Host key fingerprint is:\n" + key + "unexpected"), "");
 }
+
+TEST(PowerTools, FileVaultRequiresAuthenticationAndRemoteDisconnectWithoutCommands) {
+  for (const char* scenario : {"unlock-success", "unlock-denied", "unlock-before-auth", "unlock-no-close", "unlock-open"}) {
+    Mode mode(scenario); auto value=request(); value.action=powerTools::Action::UnlockFileVault;
+    std::string error;
+    bool success=powerTools::execute(stubPath(),value,1500,&error);
+    EXPECT_EQ(success,std::string(scenario)=="unlock-success") << scenario;
+    if (!success) EXPECT_FALSE(error.empty()) << scenario;
+    if (std::string(scenario)=="unlock-denied") EXPECT_NE(error.find("authentication failed"),std::string::npos);
+  }
+}
