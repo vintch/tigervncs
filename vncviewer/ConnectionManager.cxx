@@ -74,7 +74,7 @@ void ServerDialog::createManager(int top)
   associateVpn = new Fl_Check_Button(112, y, 318, 24, "Associate VPN-Connection"); y += 28;
   associateVpn->callback(vpnAction, this);
   vpnProvider = new Fl_Choice(112, y, 110, 25, "VPN:");
-  vpnProvider->add("Wireguard"); vpnProvider->add("OpenVPN"); vpnProvider->add("Azure VPN"); vpnProvider->value(0);
+  vpnProvider->add("Wireguard"); vpnProvider->add("OpenVPN"); vpnProvider->add("AzureVPN"); vpnProvider->value(0);
   vpnProvider->callback(vpnAction, this);
   vpnProfile = new Fl_Choice(230, y, 200, 25); y += 32;
   vpnProfile->tooltip("VPN profile");
